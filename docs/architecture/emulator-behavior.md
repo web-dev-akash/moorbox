@@ -92,3 +92,75 @@ These were captured and are used in `EmulatorDiagnosis` tests:
 - **License acceptance** is stored by `sdkmanager` as `sha1(text.trimmed)`, one
   line per accepted text, in `licenses/<id>`. Google re-wraps license text over
   time, so the same license can need a new line.
+
+## Google's SDK tools (cmdline-tools 23.0, Android CLI 1.0.16625370)
+
+**`sdkmanager`**
+
+- It is a POSIX shell wrapper. It prints a deprecation warning, then runs
+  `bin/android --sdk=<root> sdk install|remove|list …`.
+- It converts `;` to `/` in package paths and maps `--channel=1` to `--beta`
+  and 2 or 3 to `--canary`.
+
+**`bin/android`** (3.6 MB)
+
+- A launcher. On first use it downloads the real CLI to
+  `~/.android/bin/android-cli` (87 MB, native arm64, no Java needed).
+- State lives in `~/.android/cli/`: `analytics/`, `bundles/`,
+  `last_update_check` and `tos_displayed`.
+
+**Metrics**
+
+- They are on by default.
+- `--no-metrics` placed **before** the subcommand prevents any write under
+  `~/.android/cli/analytics/`. This was verified by snapshotting the folder.
+
+**Licenses**
+
+- `sdk install` prints a terms-of-service banner once, then installs without a
+  prompt.
+- It writes `licenses/<id>` in the classic `sha1(text.trimmed)` format.
+
+**Output and progress**
+
+- No progress percentages are printed, even on a TTY. The output is just
+  `\r<url>...` then `\rUnzipping <pkg>......`.
+- Downloads go to `<sdk>/.sdk/arch/<archive-sha1>.part`.
+- An SDK-wide lock lives at `<sdk>/.sdk/lock`.
+
+**Results**
+
+- Installed packages get Google's `package.xml`.
+- Exit codes are non-zero on failure (since 1.0.16406183). Moorbox also confirms
+  the package exists on disk.
+
+**`android emulator create [profile]`** takes only a profile, so it can't choose
+the image, RAM or cores. Not used.
+
+**`avdmanager`**
+
+- Still a Java program (`lib/avdmanager-classpath.jar`), needing Java 17 or newer.
+- It only manages the SDK it is installed in; `--sdk_root` is rejected for
+  `create avd`.
+- `create avd -n <id> -k <package> -d <device>` asks "custom hardware profile?"
+  on stdin; Moorbox answers `no`.
+- It doesn't follow a symlinked system-image directory ("contains no system
+  images"). An APFS clone (`cp -c`) works.
+- It writes the full set of hardware defaults, including:
+  - `disk.dataPartition.path=<temp>` — user data **still persists** across
+    restarts (verified with an installed APK);
+  - `hw.gpu.enabled=no` — Moorbox sets `yes`;
+  - `hw.ramSize=2G`;
+  - `disk.dataPartition.size=10G`;
+  - `hw.cpu.ncore=4`.
+- `list device` prints `id: N or "<id>"` blocks with `Name`, `OEM` and an
+  optional `Tag`. Wear, TV, Automotive, XR, desktop and glasses profiles have a
+  tag; phones and tablets don't.
+
+## Downloads from dl.google.com
+
+- When a client sends `Accept-Encoding: gzip`, the server answers range requests
+  from a **gzip-encoded variant** of the zip (155,361,241 bytes vs 155,384,151).
+- A resumed range of that variant can't be decoded (`NSURLErrorCannotDecodeRawData`).
+  Moorbox requests `Accept-Encoding: identity`, so byte ranges match the file on
+  disk.

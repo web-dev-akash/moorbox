@@ -74,6 +74,12 @@ final class MoorboxUITests: XCTestCase {
         return app
     }
 
+    /// `waitForExistence` returns as soon as an element exists, so it can't check dismissal.
+    private func waitForDisappearance(_ element: XCUIElement, timeout: TimeInterval = 10) -> Bool {
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: element)
+        return XCTWaiter().wait(for: [gone], timeout: timeout) == .completed
+    }
+
     private func row(_ app: XCUIApplication, _ id: String) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: "device.\(id)").firstMatch
     }
@@ -85,7 +91,7 @@ final class MoorboxUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Welcome to Moorbox"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["Check this Mac"].exists)
         app.buttons["Done"].click()
-        XCTAssertFalse(app.staticTexts["Welcome to Moorbox"].waitForExistence(timeout: 2))
+        XCTAssertTrue(waitForDisappearance(app.staticTexts["Welcome to Moorbox"]))
     }
 
     func testDevicesAreListedFromTheAVDFolder() {
@@ -161,7 +167,7 @@ final class MoorboxUITests: XCTestCase {
         app.menuItems["Delete…"].click()
         XCTAssertTrue(app.buttons["Move to Trash"].waitForExistence(timeout: 5))
         app.typeKey(.escape, modifierFlags: []) // Escape = Cancel in a confirmation dialog
-        XCTAssertFalse(app.buttons["Move to Trash"].waitForExistence(timeout: 2))
+        XCTAssertTrue(waitForDisappearance(app.buttons["Move to Trash"]))
         XCTAssertTrue(tablet.exists)
         XCTAssertTrue(FileManager.default.fileExists(atPath: avdHome.appendingPathComponent("UI_Tablet.avd").path))
     }

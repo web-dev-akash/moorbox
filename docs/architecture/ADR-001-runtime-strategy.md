@@ -1,6 +1,6 @@
 # ADR-001: Runtime strategy
 
-- **Status:** Accepted
+- **Status:** Accepted. The runtime decision stands. The native package and AVD tooling was superseded by [ADR-002](ADR-002-official-sdk-tools.md) on 2026-10-21.
 - **Date:** 2026-10-21
 - **Deciders:** founding engineer (initial implementation session)
 

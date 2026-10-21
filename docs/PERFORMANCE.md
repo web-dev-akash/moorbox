@@ -10,7 +10,7 @@ restated as a result.
 |---|---|
 | Mac | Apple M4 Pro (14 cores), 24 GB RAM |
 | macOS | 27.0.1 (26A434) |
-| Moorbox | 0.1.0, release build (`scripts/package-app.sh`, ad-hoc signed) |
+| Moorbox | 0.1.0, release build (ad-hoc signed). Re-checked on 0.2.0 (universal Xcode Release build): 44 MB footprint at launch. |
 | Emulator | 36.5.11 (build 15261927), windowed, `hw.gpu.mode=auto` (gfxstream on the host GPU) |
 | Device | API 34 `google_apis` arm64-v8a; 2 GB RAM, 2 cores, 1080×2400 @ 420 dpi, 6 GB data partition |
 | Date | 2026-10-21 |

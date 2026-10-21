@@ -5,7 +5,7 @@ model, the macOS version, the emulator version and the image used.
 
 **Status column:**
 
-- **✅ 0.1.0** — verified for 0.1.0, on an M4 Pro running macOS 27.0.1, with
+- **✅ 0.1.0 / ✅ 0.2.0** — verified for that version, on an M4 Pro running macOS 27.0.1, with
   emulator 36.5.11 / 37.2.12 and API 34 / 36 images.
 - **🔁** — automated by an integration test.
 - **☐** — not yet run.
@@ -34,3 +34,15 @@ model, the macOS version, the emulator version and the image used.
 | 20 | Diagnostics export | Export Report… | The saved text contains no home path, user name, email or token. | 🔁 redaction unit test / ☐ UI |
 | 21 | Uninstall Moorbox | Delete Moorbox.app. | The SDK, devices and logs remain (see README → Data locations). | ☐ |
 | 22 | Play Store image | Install a `google_apis_playstore` image, then create and boot a device. | The license is shown before download. The device boots with Play Store. | ☐ |
+
+## Added for 0.2.0 (official toolchain)
+
+| # | Scenario | Steps | Expected | Status |
+|---|---|---|---|---|
+| 23 | SDK without cmdline-tools | Use an Android Studio SDK that has no `cmdline-tools`. | Setup offers "Command-line tools" first, explaining the Android CLI download to `~/.android/bin`. Emulator and platform-tools installs stay disabled until it's installed. | ☐ UI / 🔁 core (`bootstrapsOfficialToolsIntoFreshSDK`) |
+| 24 | No Java | Hide every JDK (or test on a clean Mac), then open Setup. | Step 3 says no Java was found. "Install Eclipse Temurin…" shows version, size, source, destination and license. "Check Again" re-detects. | ☐ UI / 🔁 core (`installsTemurinJDK`) |
+| 25 | Create a device with avdmanager | New Device, pick Medium Phone, Create & Start. | The device appears with the chosen RAM and cores and boots. | 🔁 `deviceLifecycleWithOfficialTools` / ☐ UI |
+| 26 | Missing tools gate | Fake SDK, ⌘N. | "Can’t create devices yet", with the reason and a Setup button. | 🔁 UI test |
+| 27 | Conflicting adb | Install Homebrew `android-platform-tools` at a different version. | Diagnostics shows a warning with an explanation and a fix. | ✅ 0.2.0 (detected on this Mac: 37.0.1 vs 37.0.0) |
+| 28 | DMG install | Open the DMG, drag to Applications, launch. | Gatekeeper asks once; "Open Anyway" works; the app launches. | ☐ (built and verified with `hdiutil`, not yet installed from a download) |
+| 29 | Homebrew formula | `brew install web-dev-akash/moorbox/moorbox` | Builds from source and installs `Moorbox.app` in the prefix. | ⚠️ blocked locally (Homebrew requires Xcode 27); recipe verified |

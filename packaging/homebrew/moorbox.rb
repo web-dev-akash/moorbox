@@ -14,7 +14,6 @@ class Moorbox < Formula
 
   depends_on "xcodegen" => :build
   depends_on xcode: ["16.0", :build]
-  depends_on :macos
   depends_on macos: :sonoma
 
   def install

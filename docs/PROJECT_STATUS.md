@@ -1,140 +1,126 @@
 # Project status
 
-_Last updated: 2026-10-21, end of the initial implementation session._
+_Last updated: 2026-10-21, end of the production-hardening session (0.2.0)._
 
 ## Summary
 
-Moorbox 0.1.0 is a native SwiftUI app that drives the official Android Emulator.
-It replaces the parts of `sdkmanager` and `avdmanager` it needs with native
-Swift code, so it requires neither Java nor Android Studio. The first
-end-to-end milestone is done and verified on real hardware:
+Moorbox 0.2.0 is a native SwiftUI app built on Google's official Android tooling:
 
-> set up the runtime → create a device → start Android → install an APK → shut down
+- the **Android Emulator** runs devices;
+- the **Android CLI** (the `sdkmanager` replacement) installs packages;
+- **`avdmanager`** creates devices.
+
+When something is missing — command-line tools, emulator, platform-tools, a JDK,
+or an Android version — Moorbox explains what it is and installs it only after
+consent. It never works around missing pieces and never bypasses macOS security.
 
 ## Verification environment
 
-The following are the only verified configurations:
+Only these configurations have been verified:
 
 | Item | Value |
 |---|---|
 | Mac | Apple M4 Pro, 14 cores, 24 GB RAM |
-| macOS | 27.0.1 (26A434) |
-| Toolchain | Xcode 26.6, Swift 6.3.3 |
-| Emulator | 36.5.11 (existing Android Studio SDK) and 37.2.12 (installed by Moorbox from scratch) |
-| Images | android-34 `google_apis` arm64-v8a; android-36 `default` arm64-v8a |
+| macOS | 27.0.1 (26A434); keyboard layout ABC-India |
+| Toolchain | Xcode 26.6, Swift 6.3.3, XcodeGen 2.46.0, SwiftLint 0.65.1, SwiftFormat 0.64.0 |
+| Google tools | cmdline-tools 23.0, Android CLI 1.0.16625370, emulator 36.5.11 / 37.2.12, platform-tools 37.0.0 / 37.0.1 |
+| Java | Android Studio JBR 21.0.10; Homebrew OpenJDK 17.0.20; Temurin 21.0.12 (installed by the test) |
+| CI | GitHub Actions `macos-26` (lint, core tests, UI tests, Release build + DMG) |
+
+## Verification summary
+
+| Check | Result |
+|---|---|
+| `make lint` (SwiftFormat --lint, SwiftLint --strict) | ✅ clean |
+| `make test-core` | ✅ 69 tests |
+| `make test-ui` (XCUITest, fake SDK) | ✅ 8 tests locally. On CI, 7 of 8 passed before a test-only fix to how dismissal is awaited. |
+| `make test-integration` with Temurin (real network, Google tools, emulator) | ✅ 6 tests (see below) |
+| `make dmg` | ✅ universal (x86_64 + arm64) app, ad-hoc signed with hardened runtime, DMG verified, launches with a 44 MB footprint |
+| Homebrew formula | ⚠️ The recipe is verified by running its exact steps on a pristine GitHub tarball. `brew install` itself is blocked on this Mac: Homebrew requires Xcode 27 on macOS 27. |
+
+**Integration tests, against the real tools:**
+
+- **Live catalog.** cmdline-tools 23.0.0, emulator 37.2.12, and the
+  recommended image `android-37.0;google_apis;arm64-v8a`.
+- **Bootstrap.**
+  - cmdline-tools installed into an empty SDK (16.9 s).
+  - platform-tools installed by the Android CLI (3.5 s); `package.xml` written.
+  - **`--no-metrics` verified**: the CLI's analytics folder was unchanged.
+  - Package removed again through the CLI.
+- **Download resume.** Cancel, then retry continued from 2.7–3.2 MB (HTTP
+  Range). The partial file survives an app relaunch.
+- **Temurin JDK.** Downloaded, SHA-256 verified and installed in 19.7 s, then
+  found by `JavaLocator`.
+- **Device lifecycle with official tools.**
+  - `avdmanager` created a device with `medium_phone`.
+  - Resource overrides were applied.
+  - Cold boot 36 s (headless).
+  - The APK installed and launched; its activity was verified.
+  - Screenshot, rotate, Home and logcat worked.
+  - Graceful stop in 2.4 s, with the snapshot saved.
+  - Quick boot in 3.2 s; **the app survived the restart**.
+  - Uninstall worked, and nothing was deleted.
 
 ## Definition of done — MVP
 
-| Requirement | Status | Evidence |
-|---|---|---|
-| Builds from documented prerequisites | ✅ | `swift build -Xswiftc -warnings-as-errors`, `scripts/package-app.sh` |
-| Launches as a native app | ✅ | `dist/Moorbox.app` launched with `open`; menus, sidebar and sheets render (screens captured via the DEBUG snapshot hook) |
-| Identifies host architecture and constraints | ✅ | Setup and Diagnostics show arch, RAM, disk and `kern.hv_support`. Mach-O arch check on the emulator binary. |
-| Discovers or sets up a runtime | ✅ | Reuses the existing SDK. `freshSDKFromScratchBootsADevice` installs emulator, platform-tools and image into an empty folder, then boots. |
-| Discovers current system images via supported mechanisms | ✅ | Google's `repository2-3.xml` and `sys-img2-3.xml`, live (552 packages). `liveCatalogHasRuntimeAndImagesForThisMac`. |
-| Creates a device with valid settings | ✅ | `AVDStore.create`. Validated against `ResourceLimits`. Booted by the emulator in the integration tests. |
-| Starts and stops the device from the app | ✅ | DEBUG lifecycle drive through `AppModel`: Starting → Booting → Running → Stopped. Window mode; running after 7–17 s, stopped in 3–4 s. |
-| Accurately displays runtime and device state | ✅ | Discovery-registry watcher, plus process exit source, plus `sys.boot_completed`. Unit tests for state resolution. |
-| Connects through ADB | ✅ | Integration test: serial mapping, boot wait, shell, `emu`, logcat |
-| Installs a test APK and reports the real result | ✅ | Integration: `moorbox-hello.apk` installed, launched (activity verified in `dumpsys`), persisted across restart, then uninstalled. Failure mapping unit-tested. |
-| Functional logs and diagnostics | ✅ | Per-device emulator logs (rotated), activity log, adb check, redacted export |
-| Handles failures without deleting user data | ✅ | Delete moves to the Trash and needs confirmation. Reset Quick Boot removes only the snapshot. Failed starts never touch device files. Integration test asserts the device still exists. |
-| Core logic has meaningful tests | ✅ | 57 unit tests. 5 opt-in integration tests against the real network and emulator. |
-| README covers setup, usage, testing, troubleshooting | ✅ | `README.md` |
-| Licensing and third-party notices | ✅ | `LICENSE` (Apache-2.0), `NOTICE`, `THIRD_PARTY_NOTICES.md` |
-| Performance measurements and limitations documented | ✅ | `docs/PERFORMANCE.md` |
-| No claimed feature depends on a placeholder | ✅ | Every control calls a real operation. Location, sensors and battery are left to the emulator's own window, and the UI says so rather than faking them. |
+Every item from 0.1.0 still holds, now on the official toolchain. In particular:
 
-## Feature status
-
-### Verified
-
-- SDK discovery: settings, then `ANDROID_HOME`/`ANDROID_SDK_ROOT`, then
-  `~/Library/Android/sdk`.
-- Health check: emulator presence and architecture, adb presence.
-- Repository catalog:
-  - host and ABI filtering;
-  - previews detected by `<codename>`;
-  - 16 KB page-size and extension images ranked below standard images;
-  - recommended image = newest stable base Google APIs image (currently
-    `android-37.0;google_apis;arm64-v8a`);
-  - minimum emulator version warning.
-- Installer:
-  - HTTPS from `dl.google.com` only, with a disk space check;
-  - SHA-1 verification;
-  - `unzip` into staging, then a symlink audit, then an atomic move;
-  - staging always cleaned up;
-  - cancel, and resume via HTTP 206 (tested).
-- License consent recorded in `sdkmanager`'s format. Append-only. The hash
-  format was verified against Android Studio's own records.
-- AVD create, list, update, rename, delete-to-Trash, and quick-boot reset.
-  Android Studio–created devices are read correctly.
-- Emulator launch:
-  - in its own session (survives app quit and Ctrl-C);
-  - with `-no-metrics -crash-report-mode never`;
-  - zombie-aware, PID-reuse-safe process checks.
-- Cold boot, quick boot, graceful stop with snapshot save, force stop, and
-  cancel start.
-- APK install, launch, uninstall, user package list; screenshot, rotate, keys;
-  logcat.
-- Adopting an emulator started outside Moorbox: shown as Running with the
-  correct serial.
-- Light and dark appearance, captured for every screen.
-- Crash recovery: a SIGKILLed emulator is shown as Failed (exit 137) with a
-  remedy, device data is untouched, and the next start boots normally.
-
-### Implemented, not yet verified
-
-These are in the code, but no test or manual run has exercised them yet:
-
-- Drag-and-drop and the file picker in App Installer. The underlying adb
-  install is verified.
-- Keyboard shortcuts.
-- Settings window.
-- Export Report save panel. Redaction is unit-tested.
-- Emulator update with replacement (`replacing: true`). The code path keeps the
-  old copy until the new one is in place; untested with the real emulator
-  package.
-
-### Not implemented (see ROADMAP)
-
-- Embedded device display inside the Moorbox window.
-- Native controls for location, battery and sensors. The emulator's extended
-  controls cover these.
-- Named snapshot management; device import and export.
-- Image update notifications; persisting download resume across app launches.
+- **Discovers or sets up a runtime.** Existing SDKs are reused. Missing pieces
+  are installed after consent, through Moorbox's verified bootstrap for
+  cmdline-tools and Google's Android CLI for everything else.
+- **Creates devices with valid settings.** Uses Google's `avdmanager` and
+  hardware profiles, with resources checked against the host and API level.
+- **Handles failures without deleting user data.** Delete moves devices to the
+  Trash. Start failures select the device and show the cause. The integration
+  test asserts nothing is deleted.
 
 ## Problems found and fixed this session
 
 | Problem | Cause | Fix |
 |---|---|---|
-| Devices stuck on "Starting…" after an earlier emulator crash | The emulator shows a blocking crash-report consent dialog on the next launch | Always launch with `-no-metrics -crash-report-mode never` |
-| Stop never completed for child processes | `kill(pid, 0)` succeeds on unreaped zombies | `Shell.isAlive` checks `p_stat != SZOMB` via `sysctl` |
-| Wrong device matched by discovery | The discovery file's `avd.name` is the *display name* | Prefer `avd.id` |
-| Recommended image skipped Android 17 | Google's 37.0 image carries an extra `ai_glasses_compatible` tag | Match tags by membership |
-| Resume after cancel failed | HTTP 206 rejected as an error | Accept 200 and 206 |
-| Device names said "Android 34" | API level used as the marketing version | `AndroidVersion.shortName` |
+| `sdkmanager` now hands off to the "Android CLI", which **collects usage metrics by default** | Google's cmdline-tools 23 change | Call the CLI directly, always with `--no-metrics`; verified by an analytics snapshot |
+| Google's CLI accepts licenses without prompting | Same | Moorbox shows the license and asks before every install |
+| Resume after cancel failed (`NSURLErrorCannotDecodeRawData`) | dl.google.com serves a gzip-encoded variant to clients that accept gzip, and its byte ranges can't be resumed | Own HTTP Range downloader with `Accept-Encoding: identity`; partial files kept |
+| UI tests: typing timed out | Synthetic `typeText` fails with the ABC-India layout | Tests paste text instead |
+| UI tests flaky on CI | `XCTAssertFalse(waitForExistence)` can't detect dismissal | Wait for `exists == false` |
+| Accessibility: rows exposed child elements, not a container; device icon announced as "Iphone, Third Generation" | Missing container and hidden traits | Rows are containers; decorative icons hidden |
+| ⌘N disabled with no explanation when no image was installed | UI gating | New Device always opens and explains what's missing |
+| A start failure was only visible if that device was already selected | UX gap | The failed device is selected automatically |
+| Homebrew rejects non-notarized casks (since 2026-09-01) | Homebrew policy | Build-from-source formula; DMG with Apple's "Open Anyway" flow (ADR-003) |
+| A Homebrew test run cloned `homebrew/core` (1.5 GB) | `HOMEBREW_NO_INSTALL_FROM_API=1` used during testing | Untapped again; Homebrew is back to its previous state |
 
-## Blockers and external constraints
+## Not yet verified, or blocked
 
-- **Signing and notarization.** These need an Apple Developer ID and an App
-  Store Connect API key. The script and workflow are ready but untested, and
-  builds are currently ad-hoc signed.
-- **Intel Macs.** No hardware available. The x86_64 code paths are unverified.
-- **CI can't boot Android.** GitHub-hosted Apple Silicon runners lack nested
-  virtualization, so `integration.yml` targets self-hosted runners.
-- **Licensing.**
-  - Emulator and images can't be redistributed (SDK License §3.4) and are
-    licensed for app development (§3.1).
-  - Play Integrity doesn't pass on emulators.
+- **`brew install` of the formula.** Blocked on this Mac because Homebrew
+  requires Xcode 27 on macOS 27. The recipe steps are verified.
+- **Manual QA.** Remaining ☐ items are in [QA_CHECKLIST.md](QA_CHECKLIST.md):
+  - drag-and-drop APK onto the drop zone;
+  - adb disconnection;
+  - sleep and wake;
+  - Play Store image;
+  - insufficient disk space;
+  - the Temurin install UI flow (the core path is integration-tested);
+  - updating the emulator through the app;
+  - installing the DMG from a download.
+- **Intel Macs.** No hardware available.
+- **The emulator can't boot on GitHub-hosted runners.** Integration tests need
+  a self-hosted Apple Silicon runner (`integration.yml`).
 
-## Next concrete task
+## Side effects on this Mac from testing
 
-Work through the ☐ items in [QA_CHECKLIST.md](QA_CHECKLIST.md), starting with:
+- **Google's Android CLI** downloaded itself to `~/.android/bin/android-cli`,
+  and keeps state in `~/.android/cli/`.
+  - Early exploratory runs, before `--no-metrics` was known, queued usage
+    metrics in `~/.android/cli/analytics/metrics/spool`.
+  - Moorbox never runs the CLI without `--no-metrics`.
+  - The queued entries can be deleted manually if you don't want them sent.
+- **Homebrew:** installed xcodegen, swiftlint, swiftformat and create-dmg (as
+  approved). The temporary taps were removed.
 
-1. #15: Stop after relaunching Moorbox while a device is running;
-2. #11: drag-and-drop install;
-3. #10: adb disconnection;
-4. #17: sleep and wake.
+## Next concrete tasks
 
-Then do a first Developer ID–signed build once credentials are available.
+1. Work through the ☐ items in [QA_CHECKLIST.md](QA_CHECKLIST.md).
+2. After installing Xcode 27, run `brew install --HEAD` with the formula in a
+   local tap.
+3. Create the `web-dev-akash/homebrew-moorbox` tap, and tag `v0.2.0`. The
+   release workflow then builds the DMG and prints the formula checksum.

@@ -12,28 +12,48 @@ links only against Apple system frameworks:
 It has **no third-party Swift package dependencies**, and the app bundle
 contains no third-party code.
 
-## Components Moorbox downloads for you (not bundled, not redistributed)
+## Components installed only at your request (never bundled or redistributed)
 
-At your request, Moorbox downloads these components directly from Google
-(`https://dl.google.com/android/repository/`), using the same repository
-metadata that `sdkmanager` and Android Studio use.
+Moorbox shows the size, destination and license before each install, and installs
+nothing without your confirmation. None of these components is covered by Moorbox's
+license.
 
-Before each download, Moorbox shows you the full license text from that
-metadata. If you accept, Moorbox records your acceptance the same way
-`sdkmanager` does. These components are **not** covered by Moorbox's license.
+**Android SDK components** come from Google
+(`https://dl.google.com/android/repository/`). Moorbox installs the command-line
+tools itself (checksum-verified). Everything else is installed by **Google's
+Android CLI**, which comes with the command-line tools, run with `--no-metrics`.
+Google's tools record your license acceptance in `<sdk>/licenses/`.
 
-| Component | Repository license ID | Notes |
+| Component | License ID | Notes |
 |---|---|---|
-| Android Emulator (`emulator`) | `android-sdk-license` (stable channel) | Google binary distribution. Its source is mostly GPLv2 (QEMU) plus other open-source licenses ([source](https://android.googlesource.com/platform/external/qemu)). Bundled notices are in the emulator's `NOTICE` files inside your SDK folder. |
-| Android SDK Platform-Tools (`adb`) | `android-sdk-license` | Google binary distribution. |
-| Android system images, AOSP (`default`) | `android-sdk-license` | Built from the Android Open Source Project. |
-| Android system images, Google APIs / Google Play (ARM) | `android-sdk-arm-dbt-license` | Contain **proprietary Google software**. Google Play images include Google Play services and the Play Store. These are not open source. |
-| Preview, beta and canary system images | `android-sdk-preview-license` | Pre-release terms apply. |
+| Android SDK Command-line Tools (`cmdline-tools;latest`), including the Android CLI launcher and `avdmanager` | `android-sdk-license` | On first use, Google's launcher downloads the Android CLI binary to `~/.android/bin/`. |
+| Android Emulator | `android-sdk-license` | Its source is mostly GPLv2 (QEMU) plus other open-source licenses ([source](https://android.googlesource.com/platform/external/qemu)). Notices are inside the SDK folder. |
+| Android SDK Platform-Tools (`adb`) | `android-sdk-license` | |
+| System images, AOSP (`default`) | `android-sdk-license` | Built from the Android Open Source Project |
+| System images, Google APIs / Google Play (ARM) | `android-sdk-arm-dbt-license` | Contain **proprietary Google software**. Play images include Google Play services and the Play Store. |
+| Preview, beta and canary images | `android-sdk-preview-license` | Pre-release terms |
 
-The [Android Software Development Kit License Agreement](https://developer.android.com/studio/terms)
-restricts redistribution (§3.4) and licenses the SDK for developing
-applications (§3.1). For these reasons Moorbox does not mirror, cache for others,
-or bundle any of these components.
+The [Android SDK License Agreement](https://developer.android.com/studio/terms)
+restricts redistribution (§3.4) and limits use to developing applications (§3.1).
+
+**Eclipse Temurin JDK** is only installed if you choose it and no JDK 17+ was
+found. It comes from the Eclipse Adoptium project
+(`api.adoptium.net`, `github.com/adoptium`). It's an OpenJDK build under the
+[GNU GPL v2 with the Classpath Exception](https://openjdk.org/legal/gplv2+ce.html),
+and Moorbox uses it only to run `avdmanager`. It's installed per-user into
+`~/Library/Application Support/Moorbox/JDK`.
+
+## Developer tools (not shipped)
+
+These are used to build, test and package Moorbox. None of them is part of the
+app:
+
+| Tool | License | Source |
+|---|---|---|
+| XcodeGen | MIT | https://github.com/yonaskolb/XcodeGen |
+| SwiftLint | MIT | https://github.com/realm/SwiftLint |
+| SwiftFormat | MIT | https://github.com/nicklockwood/SwiftFormat |
+| create-dmg | MIT | https://github.com/create-dmg/create-dmg |
 
 ## Test-only tools (never shipped)
 

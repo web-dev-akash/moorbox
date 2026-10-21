@@ -11,7 +11,10 @@ read this before opening a pull request.
 - **Measure before claiming.** Performance claims need numbers from the
   procedure in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
 - **Keep it light.** Don't add dependencies without discussing them first in an
-  issue. Moorbox currently has none beyond Apple frameworks. Don't add polling
+  issue. Moorbox currently has none beyond Apple frameworks.
+- **Ask, don't work around.** If something required is missing, the app explains
+  what and asks before installing it. Never bypass macOS security (Gatekeeper,
+  quarantine, privileges). Don't add polling
   loops, background daemons, or work at launch that the home screen doesn't
   need.
 - **Respect licenses.** Never commit or bundle Android SDK components, system
@@ -24,38 +27,52 @@ read this before opening a pull request.
 
 | Path | What lives there |
 |---|---|
-| `Sources/MoorboxCore/` | SDK, repository, installer, AVD, emulator runtime, adb and diagnostics logic. Has no UI imports and is unit-tested. |
-| `Sources/Moorbox/` | The SwiftUI app. Views read `AppModel`, and `AppModel` calls into MoorboxCore. |
-| `Tests/MoorboxCoreTests/` | Unit tests, plus opt-in integration tests (`IntegrationTests.swift`). |
-| `docs/` | Architecture decisions, roadmap, status, performance and QA checklist. |
+| `Sources/MoorboxCore/` | Swift package with all logic: repository catalog, verified installer, the Android CLI, `avdmanager` and Java wrappers, AVD store, emulator runtime, adb, diagnostics. No UI imports. |
+| `App/` | The SwiftUI app (`Sources/`, `Resources/Assets.xcassets`). Views read `AppModel`, and `AppModel` calls MoorboxCore. |
+| `Tests/MoorboxCoreTests/` | Unit tests, plus opt-in integration tests (`IntegrationTests.swift`) and recorded fixtures of real tool output |
+| `UITests/` | XCUITest suite, run against a fake SDK and device folder |
+| `project.yml` | XcodeGen spec. `Moorbox.xcodeproj` is generated, not committed. |
+| `packaging/homebrew/` | Homebrew formula template (build from source) |
+| `docs/` | ADRs, observed tool behavior, roadmap, status, performance, QA checklist |
 
-The UI never builds emulator command lines itself. Runtime work goes through the
-`AndroidRuntime` protocol (see `docs/architecture/ADR-001-runtime-strategy.md`).
+The UI never builds tool command lines itself. Device lifecycle goes through the
+`AndroidRuntime` protocol. SDK installs go through `AndroidCLI`, which always passes
+`--no-metrics`, and device creation through `AVDManager`. See
+`docs/architecture/ADR-002-official-sdk-tools.md`.
 
 ## Building and testing
 
-Requirements: macOS 14 or later, and Xcode 16 or later (Swift 6).
+Requirements:
+
+- macOS 14 or later and Xcode 16 or later (Swift 6);
+- `brew install xcodegen swiftlint swiftformat create-dmg`.
 
 ```sh
-swift build                 # debug build
-swift test                  # unit tests (no network, no emulator needed)
-scripts/package-app.sh      # dist/Moorbox.app + zip
+make project            # generate Moorbox.xcodeproj
+make run                # debug build + launch
+make lint               # must pass: SwiftFormat --lint + SwiftLint --strict
+make format             # apply SwiftFormat
+make test-core          # unit tests (no network, SDK or emulator)
+make test-ui            # XCUITest (needs permission for the test runner to control the Mac)
+make dmg                # universal Release app + DMG in dist/
 ```
 
-The integration tests use the real network, SDK and emulator, so they are
-opt-in:
+Integration tests use the real network, Google's tools and the emulator. They
+create their own SDK and device folders and never touch yours:
 
 ```sh
-scripts/build-test-apk.sh                                      # needs a JDK 17+ and SDK build-tools
-MOORBOX_INTEGRATION=1 swift test --filter IntegrationTests      # ~1 min, boots a temporary device
-MOORBOX_INTEGRATION=1 MOORBOX_INTEGRATION_FRESH=1 swift test --filter fresh   # downloads ~1.3 GB
+make test-integration                                   # needs a JDK 17+ and an Android SDK with an arm64 image
+MOORBOX_INTEGRATION_JDK=1 make test-integration         # + Temurin install (~200 MB)
+MOORBOX_INTEGRATION_FRESH=1 make test-integration       # + full SDK from scratch (~1.4 GB)
 ```
 
-Integration tests create devices in a temporary AVD folder. They never touch
-your own devices.
+**When adding parsing for a Google tool**, record real output as a fixture in
+`Tests/MoorboxCoreTests/Fixtures/` and test against it. Document any surprising
+behavior in `docs/architecture/emulator-behavior.md`.
 
-For UI work, `MOORBOX_SNAPSHOT_DIR=/some/dir swift run Moorbox` (debug builds
-only) renders each screen to PNG and quits.
+**UI tests** should find elements by accessibility identifier and should paste text
+rather than call `typeText`, because synthetic typing fails with some keyboard
+layouts.
 
 ## Pull requests
 

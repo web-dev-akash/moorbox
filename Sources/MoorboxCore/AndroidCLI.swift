@@ -21,10 +21,18 @@ public enum ToolError: LocalizedError, Equatable {
 public struct AndroidCLI: Sendable {
     public let sdk: AndroidSDK
 
-    public init(sdk: AndroidSDK) { self.sdk = sdk }
+    public init(sdk: AndroidSDK) {
+        self.sdk = sdk
+    }
 
-    public var launcher: URL { sdk.root.appendingPathComponent("cmdline-tools/latest/bin/android") }
-    public var isInstalled: Bool { FileManager.default.isExecutableFile(atPath: launcher.path) }
+    public var launcher: URL {
+        sdk.root.appendingPathComponent("cmdline-tools/latest/bin/android")
+    }
+
+    public var isInstalled: Bool {
+        FileManager.default.isExecutableFile(atPath: launcher.path)
+    }
+
     /// Where Google's launcher keeps the downloaded CLI.
     public static let cacheLocation = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".android/bin/android-cli")
 
@@ -34,7 +42,9 @@ public struct AndroidCLI: Sendable {
     }
 
     /// The CLI uses `/` where SDK paths use `;` (`system-images/android-36/default/arm64-v8a`).
-    public static func cliPath(_ sdkPath: String) -> String { sdkPath.replacingOccurrences(of: ";", with: "/") }
+    public static func cliPath(_ sdkPath: String) -> String {
+        sdkPath.replacingOccurrences(of: ";", with: "/")
+    }
 
     /// Packages outside the stable channel need an explicit opt-in flag.
     public static func channelFlags(_ channel: String) -> [String] {
@@ -73,8 +83,11 @@ public struct AndroidCLI: Sendable {
     /// Installs (or updates) a package. Progress comes from the CLI's own partial download
     /// (`<sdk>/.sdk/arch/<sha1>.part`, observed in CLI 1.0); if that file can't be found the
     /// caller still gets the phase changes, just without byte counts.
-    public func install(_ package: RemotePackage, host: CPUArchitecture,
-                        progress: @escaping @Sendable (InstallPhase) -> Void) async throws {
+    public func install(
+        _ package: RemotePackage,
+        host: CPUArchitecture,
+        progress: @escaping @Sendable (InstallPhase) -> Void
+    ) async throws {
         let archive = package.archive(for: host)
         let total = archive?.size ?? 0
         progress(.downloading(received: 0, total: total))
@@ -118,7 +131,9 @@ public struct HardwareProfile: Identifiable, Hashable, Sendable {
     public var tag: String?
 
     /// Phones and tablets only; Wear, TV, Automotive, XR, desktop and glasses need their own images.
-    public var isPhoneOrTablet: Bool { tag == nil }
+    public var isPhoneOrTablet: Bool {
+        tag == nil
+    }
 }
 
 /// Google's `avdmanager` (still Java-based in cmdline-tools 23). Creates AVDs exactly as
@@ -134,7 +149,9 @@ public struct AVDManager: Sendable {
         self.avdHome = avdHome
     }
 
-    public var executable: URL { sdk.root.appendingPathComponent("cmdline-tools/latest/bin/avdmanager") }
+    public var executable: URL {
+        sdk.root.appendingPathComponent("cmdline-tools/latest/bin/avdmanager")
+    }
 
     func environment(base: [String: String] = ProcessInfo.processInfo.environment) -> [String: String] {
         var env = base
@@ -160,7 +177,7 @@ public struct AVDManager: Sendable {
     }
 
     public func listDevices() async throws -> [HardwareProfile] {
-        Self.parseDevices(try await run(["list", "device"]).stdout)
+        try await Self.parseDevices(run(["list", "device"]).stdout)
     }
 
     /// Parses blocks like:
@@ -176,7 +193,9 @@ public struct AVDManager: Sendable {
         for raw in text.split(whereSeparator: \.isNewline) {
             let line = raw.trimmingCharacters(in: .whitespaces)
             if line.hasPrefix("id:") {
-                if let current { profiles.append(current) }
+                if let current {
+                    profiles.append(current)
+                }
                 let id = line.split(separator: "\"").dropFirst().first.map(String.init) ?? ""
                 current = HardwareProfile(id: id, name: id, oem: "", tag: nil)
             } else if let value = Self.value(line, key: "Name") {
@@ -187,20 +206,23 @@ public struct AVDManager: Sendable {
                 current?.tag = value.isEmpty ? nil : value
             }
         }
-        if let current { profiles.append(current) }
+        if let current {
+            profiles.append(current)
+        }
         return profiles.filter { !$0.id.isEmpty }
     }
 
     private static func value(_ line: String, key: String) -> String? {
-        guard line.hasPrefix(key), let colon = line.firstIndex(of: ":") else { return nil }
-        guard line[..<colon].trimmingCharacters(in: .whitespaces) == key else { return nil }
+        guard line.hasPrefix(key), let colon = line.firstIndex(of: ":"), line[..<colon].trimmingCharacters(in: .whitespaces) == key else { return nil }
         return line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
     }
 
     /// `avdmanager create avd`; answers "no" to its custom-hardware-profile prompt.
     public func create(id: String, systemImagePackage: String, deviceID: String) async throws {
         try FileManager.default.createDirectory(at: avdHome, withIntermediateDirectories: true)
-        try await run(["create", "avd", "--name", id, "--package", systemImagePackage, "--device", deviceID],
-                      input: Data("no\n".utf8))
+        try await run(
+            ["create", "avd", "--name", id, "--package", systemImagePackage, "--device", deviceID],
+            input: Data("no\n".utf8)
+        )
     }
 }

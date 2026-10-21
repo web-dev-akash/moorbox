@@ -9,9 +9,12 @@ public struct Revision: Comparable, Hashable, Sendable, CustomStringConvertible 
 
     /// Parses "36.5.11", "36.5.11.0" or "14" (the format of `Pkg.Revision`).
     public init?(string: String) {
-        let parts = string.split(separator: " ")[0].split(separator: ".").map { Int($0) }
-        guard let major = parts.first ?? nil else { return nil }
-        self.init(major, parts.count > 1 ? parts[1] ?? 0 : 0, parts.count > 2 ? parts[2] ?? 0 : 0)
+        let parts = (string.split(separator: " ").first ?? "").split(separator: ".")
+        guard let first = parts.first, let major = Int(first) else { return nil }
+        func part(_ i: Int) -> Int {
+            parts.count > i ? Int(parts[i]) ?? 0 : 0
+        }
+        self.init(major, part(1), part(2))
     }
 
     public var description: String {
@@ -51,15 +54,28 @@ public struct SystemImageDetails: Hashable, Sendable {
     public var extensionLevel: Int?
     public var baseExtension: Bool
 
-    public var isPreview: Bool { codename != nil }
-    public var hasPlayStore: Bool { tagIDs.contains { $0.contains("playstore") } }
-    public var uses16KPages: Bool { tagIDs.contains("page_size_16kb") }
+    public var isPreview: Bool {
+        codename != nil
+    }
+
+    public var hasPlayStore: Bool {
+        tagIDs.contains { $0.contains("playstore") }
+    }
+
+    public var uses16KPages: Bool {
+        tagIDs.contains("page_size_16kb")
+    }
+
     /// Google APIs without the Play Store. Images may carry extra capability tags
     /// (e.g. `ai_glasses_compatible`), so test membership, not equality.
-    public var isGoogleAPIs: Bool { tagIDs.contains("google_apis") && !hasPlayStore }
+    public var isGoogleAPIs: Bool {
+        tagIDs.contains("google_apis") && !hasPlayStore
+    }
 
     /// (major, minor) parsed from the leading digits of `apiLevel`, for sorting.
-    public var apiVersion: (major: Int, minor: Int) { AndroidVersion.parse(apiLevel) }
+    public var apiVersion: (major: Int, minor: Int) {
+        AndroidVersion.parse(apiLevel)
+    }
 }
 
 public struct RemotePackage: Hashable, Sendable, Identifiable {
@@ -74,7 +90,9 @@ public struct RemotePackage: Hashable, Sendable, Identifiable {
     public var systemImage: SystemImageDetails?
     public var minEmulatorRevision: Revision?
 
-    public var id: String { path }
+    public var id: String {
+        path
+    }
 
     /// The archive for this host, or nil if the package isn't offered for it.
     public func archive(for arch: CPUArchitecture) -> Archive? {
@@ -116,15 +134,18 @@ public struct Catalog: Sendable {
     /// System images that can run accelerated on this host, newest first. Obsolete
     /// packages and images whose ABI doesn't match the host CPU are excluded.
     public func systemImages(for arch: CPUArchitecture, includePreviews: Bool) -> [RemotePackage] {
-        packages.filter { p in
-            guard let img = p.systemImage, !p.obsolete, p.archive(for: arch) != nil else { return false }
-            return img.abi == arch.nativeAndroidABI && (includePreviews || !img.isPreview)
+        let images: [(package: RemotePackage, image: SystemImageDetails)] = packages.compactMap { p in
+            guard let img = p.systemImage, !p.obsolete, p.archive(for: arch) != nil,
+                  img.abi == arch.nativeAndroidABI, includePreviews || !img.isPreview else { return nil }
+            return (p, img)
         }
-        .sorted { a, b in
-            let (x, y) = (a.systemImage!, b.systemImage!)
-            if x.apiVersion != y.apiVersion { return x.apiVersion > y.apiVersion }
-            return SystemImageRanking.score(x) > SystemImageRanking.score(y)
+        return images.sorted { a, b in
+            if a.image.apiVersion != b.image.apiVersion {
+                return a.image.apiVersion > b.image.apiVersion
+            }
+            return SystemImageRanking.score(a.image) > SystemImageRanking.score(b.image)
         }
+        .map(\.package)
     }
 
     /// The default suggestion: the newest stable, base-extension, 4 KB page-size image,
@@ -132,7 +153,7 @@ public struct Catalog: Sendable {
     public func recommendedSystemImage(for arch: CPUArchitecture) -> RemotePackage? {
         let stable = systemImages(for: arch, includePreviews: false)
         return stable.first { p in
-            let img = p.systemImage!
+            guard let img = p.systemImage else { return false }
             return img.baseExtension && !img.uses16KPages && img.isGoogleAPIs
         } ?? stable.first
     }
@@ -141,9 +162,17 @@ public struct Catalog: Sendable {
 enum SystemImageRanking {
     static func score(_ img: SystemImageDetails) -> Int {
         var s = 0
-        if img.baseExtension { s += 8 }
-        if !img.uses16KPages { s += 4 }
-        if img.isGoogleAPIs { s += 2 } else if img.hasPlayStore { s += 1 }
+        if img.baseExtension {
+            s += 8
+        }
+        if !img.uses16KPages {
+            s += 4
+        }
+        if img.isGoogleAPIs {
+            s += 2
+        } else if img.hasPlayStore {
+            s += 1
+        }
         return s
     }
 }
@@ -171,7 +200,9 @@ public enum AndroidVersion {
 
     /// "Android 16 (API 36)", "Android 16 (API 36.1)", "API 41".
     public static func displayName(apiLevel: String, codename: String? = nil) -> String {
-        if let codename { return "Preview \(codename) (API \(apiLevel))" }
+        if let codename {
+            return "Preview \(codename) (API \(apiLevel))"
+        }
         let major = parse(apiLevel).major
         guard let name = names[major] else { return "API \(apiLevel)" }
         return "Android \(name) (API \(apiLevel))"
@@ -204,7 +235,9 @@ public enum RepositoryParser {
         }
         var channels: [String: String] = [:]
         for el in root.elements(forName: "channel") {
-            if let id = el.attribute(forName: "id")?.stringValue { channels[id] = el.stringValue }
+            if let id = el.attribute(forName: "id")?.stringValue {
+                channels[id] = el.stringValue
+            }
         }
 
         var packages: [RemotePackage] = []
@@ -246,8 +279,13 @@ public enum RepositoryParser {
               let checksum = complete.child("checksum"),
               checksum.attribute(forName: "type")?.stringValue ?? "sha1" == "sha1",
               let sha1 = checksum.stringValue?.lowercased(), sha1.count == 40 else { return nil }
-        return Archive(url: url, size: size, sha1: sha1,
-                       hostOS: el.child("host-os")?.stringValue, hostArch: el.child("host-arch")?.stringValue)
+        return Archive(
+            url: url,
+            size: size,
+            sha1: sha1,
+            hostOS: el.child("host-os")?.stringValue,
+            hostArch: el.child("host-arch")?.stringValue
+        )
     }
 
     static func parseSystemImage(_ details: XMLElement) -> SystemImageDetails? {
@@ -269,13 +307,18 @@ public enum RepositoryParser {
 }
 
 private extension XMLElement {
-    func child(_ name: String) -> XMLElement? { elements(forName: name).first }
-    func int(_ name: String) -> Int? { child(name)?.stringValue.flatMap { Int($0.trimmingCharacters(in: .whitespaces)) } }
+    func child(_ name: String) -> XMLElement? {
+        elements(forName: name).first
+    }
+
+    func int(_ name: String) -> Int? {
+        child(name)?.stringValue.flatMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+    }
 }
 
 /// Fetches the official repository metadata from dl.google.com.
 public struct SDKRepository: Sendable {
-    public static let baseURL = URL(string: "https://dl.google.com/android/repository/")!
+    public static let baseURL = URL(constant: "https://dl.google.com/android/repository/")
     /// The system-image sites listed in `addons_list-5.xml` that matter for phone/tablet AVDs.
     public static let systemImageSites = ["android", "google_apis", "google_apis_playstore"]
 
@@ -299,7 +342,9 @@ public struct SDKRepository: Sendable {
                 }
             }
             var catalog = Catalog()
-            for try await part in group { catalog.merge(part) }
+            for try await part in group {
+                catalog.merge(part)
+            }
             return catalog
         }
     }

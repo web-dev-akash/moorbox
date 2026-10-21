@@ -1,27 +1,28 @@
 import Foundation
-import Testing
 @testable import MoorboxCore
+import Testing
 
 let testImage = InstalledSystemImage(
     packagePath: "system-images;android-36;google_apis;arm64-v8a",
     relativeDirectory: "system-images/android-36/google_apis/arm64-v8a/",
     platformDirectory: "android-36", apiLevel: "36", codename: nil,
-    tagID: "google_apis", tagDisplay: "Google APIs", abi: "arm64-v8a", revision: "7")
+    tagID: "google_apis", tagDisplay: "Google APIs", abi: "arm64-v8a", revision: "7"
+)
 
 let bigHost = HostInfo(macOSVersion: "26.0", architecture: .arm64, physicalMemory: 24 << 30, cpuCount: 14, hypervisorSupported: true)
 let smallHost = HostInfo(macOSVersion: "26.0", architecture: .arm64, physicalMemory: 8 << 30, cpuCount: 8, hypervisorSupported: true)
 
-@Suite struct ResourceTests {
+struct ResourceTests {
     @Test func limitsDependOnHostAndAPI() {
         let big = ResourceLimits.compute(host: bigHost, apiLevel: "36")
-        #expect(big.ramMB == 2048...8192)
-        #expect(big.cores == 1...8)
+        #expect(big.ramMB == 2048 ... 8192)
+        #expect(big.cores == 1 ... 8)
         let small = ResourceLimits.compute(host: smallHost, apiLevel: "36")
-        #expect(small.ramMB == 2048...4096)
-        #expect(small.cores == 1...6)
+        #expect(small.ramMB == 2048 ... 4096)
+        #expect(small.cores == 1 ... 6)
         // API 37+ needs at least 4 GB.
         #expect(ResourceLimits.compute(host: bigHost, apiLevel: "37.0").ramMB.lowerBound == 4096)
-        #expect(ResourceLimits.compute(host: smallHost, apiLevel: "37").ramMB == 4096...4096)
+        #expect(ResourceLimits.compute(host: smallHost, apiLevel: "37").ramMB == 4096 ... 4096)
     }
 
     @Test func presetsAreClampedToLimits() {
@@ -36,7 +37,7 @@ let smallHost = HostInfo(macOSVersion: "26.0", architecture: .arm64, physicalMem
     }
 }
 
-@Suite struct AVDTests {
+struct AVDTests {
     func spec(_ name: String = "Test Phone", ram: Int = 2048) -> DeviceSpec {
         var s = DeviceSpec(displayName: name, image: testImage, profileID: "medium_phone", resources: .lightweight)
         s.ramMB = ram
@@ -47,21 +48,21 @@ let smallHost = HostInfo(macOSVersion: "26.0", architecture: .arm64, physicalMem
     func writeAVDManagerDevice(_ tmp: TempDir, id: String = "Test_Phone") throws -> VirtualDevice {
         try tmp.write("\(id).ini", "avd.ini.encoding=UTF-8\npath=\(tmp.url.path)/\(id).avd\ntarget=android-36\n")
         try tmp.write("\(id).avd/config.ini", """
-            avd.id=\(id)
-            avd.name=\(id)
-            disk.dataPartition.path=<temp>
-            disk.dataPartition.size=10G
-            hw.cpu.ncore=4
-            hw.device.name=medium_phone
-            hw.gpu.enabled=no
-            hw.gpu.mode=auto
-            hw.lcd.density=420
-            hw.lcd.height=2400
-            hw.lcd.width=1080
-            hw.ramSize=2G
-            image.sysdir.1=system-images/android-36/google_apis/arm64-v8a/
-            tag.id=google_apis
-            """)
+        avd.id=\(id)
+        avd.name=\(id)
+        disk.dataPartition.path=<temp>
+        disk.dataPartition.size=10G
+        hw.cpu.ncore=4
+        hw.device.name=medium_phone
+        hw.gpu.enabled=no
+        hw.gpu.mode=auto
+        hw.lcd.density=420
+        hw.lcd.height=2400
+        hw.lcd.width=1080
+        hw.ramSize=2G
+        image.sysdir.1=system-images/android-36/google_apis/arm64-v8a/
+        tag.id=google_apis
+        """)
         return try #require(AVDStore(home: tmp.url).list().first { $0.id == id })
     }
 
@@ -106,9 +107,11 @@ let smallHost = HostInfo(macOSVersion: "26.0", architecture: .arm64, physicalMem
     @Test func nameCollisionsAreRejectedBeforeRunningAVDManager() async throws {
         let tmp = try TempDir()
         _ = try writeAVDManagerDevice(tmp)
-        let manager = AVDManager(sdk: AndroidSDK(root: tmp.url),
-                                 java: JavaRuntime(home: tmp.url, version: "21", majorVersion: 21, source: .system),
-                                 avdHome: tmp.url)
+        let manager = AVDManager(
+            sdk: AndroidSDK(root: tmp.url),
+            java: JavaRuntime(home: tmp.url, version: "21", majorVersion: 21, source: .system),
+            avdHome: tmp.url
+        )
         await #expect(throws: AVDError.nameTaken("Test Phone")) {
             try await AVDStore(home: tmp.url).create(spec(), limits: ResourceLimits.compute(host: bigHost, apiLevel: "36"), using: manager)
         }
@@ -135,7 +138,10 @@ let smallHost = HostInfo(macOSVersion: "26.0", architecture: .arm64, physicalMem
     @Test func readsAndroidStudioDevices() throws {
         let tmp = try TempDir()
         try tmp.write("Pixel_6.ini", "avd.ini.encoding=UTF-8\npath=\(tmp.url.path)/Pixel_6.avd\npath.rel=avd/Pixel_6.avd\ntarget=android-34\n")
-        try tmp.write("Pixel_6.avd/config.ini", "avd.ini.displayname=Pixel 6\nhw.ramSize=2G\nimage.sysdir.1=system-images/android-34/google_apis/arm64-v8a/\nhw.lcd.width=1080\nhw.lcd.height=2400\nhw.lcd.density=420\n")
+        try tmp.write(
+            "Pixel_6.avd/config.ini",
+            "avd.ini.displayname=Pixel 6\nhw.ramSize=2G\nimage.sysdir.1=system-images/android-34/google_apis/arm64-v8a/\nhw.lcd.width=1080\nhw.lcd.height=2400\nhw.lcd.density=420\n"
+        )
         try tmp.write("Orphan.ini", "path=/nonexistent/Orphan.avd\n")
         let devices = AVDStore(home: tmp.url).list()
         #expect(devices.count == 1)
@@ -165,9 +171,14 @@ let smallHost = HostInfo(macOSVersion: "26.0", architecture: .arm64, physicalMem
     }
 }
 
-@Suite struct RuntimeTests {
-    let device = VirtualDevice(id: "Test_Phone", iniFile: URL(fileURLWithPath: "/a/Test_Phone.ini"),
-                               directory: URL(fileURLWithPath: "/a/Test_Phone.avd"), config: [:], target: nil)
+struct RuntimeTests {
+    let device = VirtualDevice(
+        id: "Test_Phone",
+        iniFile: URL(fileURLWithPath: "/a/Test_Phone.ini"),
+        directory: URL(fileURLWithPath: "/a/Test_Phone.avd"),
+        config: [:],
+        target: nil
+    )
 
     @Test func launchArguments() {
         let base = ["-avd", "Test_Phone", "-no-metrics", "-crash-report-mode", "never"]
@@ -177,8 +188,11 @@ let smallHost = HostInfo(macOSVersion: "26.0", architecture: .arm64, physicalMem
     }
 
     @Test func environmentPointsAtSDKAndAVDHome() {
-        let runtime = EmulatorRuntime(sdk: AndroidSDK(root: URL(fileURLWithPath: "/sdk")), avdHome: URL(fileURLWithPath: "/avds"),
-                                      logDirectory: URL(fileURLWithPath: "/logs"))
+        let runtime = EmulatorRuntime(
+            sdk: AndroidSDK(root: URL(fileURLWithPath: "/sdk")),
+            avdHome: URL(fileURLWithPath: "/avds"),
+            logDirectory: URL(fileURLWithPath: "/logs")
+        )
         let env = runtime.environment(base: ["PATH": "/usr/bin", "ANDROID_HOME": "/other"])
         #expect(env["ANDROID_HOME"] == "/sdk")
         #expect(env["ANDROID_SDK_ROOT"] == "/sdk")
@@ -190,13 +204,13 @@ let smallHost = HostInfo(macOSVersion: "26.0", architecture: .arm64, physicalMem
         let tmp = try TempDir()
         // Real format observed from emulator 36.5.11.
         try tmp.write("pid_\(getpid()).ini", """
-            avd.id=Test_Phone
-            port.serial=5556
-            port.adb=5557
-            avd.name=Test Phone
-            avd.dir=/a/Test_Phone.avd
-            grpc.token=secret
-            """)
+        avd.id=Test_Phone
+        port.serial=5556
+        port.adb=5557
+        avd.name=Test Phone
+        avd.dir=/a/Test_Phone.avd
+        grpc.token=secret
+        """)
         try tmp.write("pid_abc.ini", "avd.name=x\nport.serial=1\n")
         try tmp.write("other.txt", "")
         let parsed = try #require(EmulatorRuntime.parseDiscoveryFile(tmp.url.appendingPathComponent("pid_\(getpid()).ini")))
@@ -215,7 +229,7 @@ let smallHost = HostInfo(macOSVersion: "26.0", architecture: .arm64, physicalMem
     }
 }
 
-@Suite struct DeviceStateTests {
+struct DeviceStateTests {
     let instance = RunningInstance(pid: 1, avdID: "a", avdDirectory: "/a", consolePort: 5554)
     let failure = Diagnosis(summary: "boom", remedy: "fix")
 

@@ -15,8 +15,14 @@ struct SetupView: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Welcome to Moorbox").font(.largeTitle.bold())
-                Text("Moorbox runs Android virtual devices on your Mac with Google’s official Android Emulator and SDK tools, without Android Studio. It asks before downloading anything, and downloads only from Google and Eclipse Adoptium.")
-                    .foregroundStyle(.secondary)
+                Text(
+                    """
+                    Moorbox runs Android virtual devices on your Mac with Google’s official Android Emulator and SDK \
+                    tools, without Android Studio. It asks before downloading anything, and downloads only from \
+                    Google and Eclipse Adoptium.
+                    """
+                )
+                .foregroundStyle(.secondary)
             }
             .padding(24)
             Divider()
@@ -40,8 +46,14 @@ struct SetupView: View {
         }
         .frame(width: 660, height: 720)
         .onAppear { model.loadCatalog() }
-        .sheet(isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } })) {
-            if let confirm { InstallSheet(package: confirm.package, replacing: confirm.replacing).environment(model) }
+        .sheet(isPresented: Binding(get: { confirm != nil }, set: {
+            if !$0 {
+                confirm = nil
+            }
+        })) {
+            if let confirm {
+                InstallSheet(package: confirm.package, replacing: confirm.replacing).environment(model)
+            }
         }
         .sheet(isPresented: $confirmJDK) { JDKInstallSheet().environment(model) }
     }
@@ -53,11 +65,19 @@ struct SetupView: View {
         let disk = HostInfo.availableDiskSpace(at: model.effectiveSDKLocation) ?? 0
         return Step(number: 1, title: "Check this Mac", done: h.hypervisorSupported) {
             Check(ok: true, "macOS \(h.macOSVersion)")
-            Check(ok: true, h.architecture == .arm64 ? "Apple Silicon — Android arm64 images run natively" : "Intel — x86_64 images (not yet verified on Intel)")
+            Check(
+                ok: true,
+                h.architecture == .arm64 ? "Apple Silicon — Android arm64 images run natively" : "Intel — x86_64 images (not yet verified on Intel)"
+            )
             Check(ok: h.physicalMemoryMB >= 8192, "\(h.physicalMemoryMB / 1024) GB memory" + (h.physicalMemoryMB < 8192 ? " — use the Lightweight preset" : ""))
             Check(ok: disk > 16 * 1_073_741_824, "\(disk.bytes) free" + (disk < 16 * 1_073_741_824 ? " — each Android version needs 2–6 GB" : ""))
-            Check(ok: h.hypervisorSupported, h.hypervisorSupported ? "Hardware acceleration available" : "Hardware acceleration unavailable (running inside a VM?). Android will not run.")
-            if h.isTranslated { Check(ok: false, "Moorbox is running under Rosetta; use the native build for best results.") }
+            Check(
+                ok: h.hypervisorSupported,
+                h.hypervisorSupported ? "Hardware acceleration available" : "Hardware acceleration unavailable (running inside a VM?). Android will not run."
+            )
+            if h.isTranslated {
+                Check(ok: false, "Moorbox is running under Rosetta; use the native build for best results.")
+            }
         }
     }
 
@@ -73,15 +93,35 @@ struct SetupView: View {
             if let sdk = model.sdk {
                 Text("Using the Android SDK at \(sdk.root.path)").font(.callout).textSelection(.enabled)
             } else {
-                Text("No Android SDK found. Components will be installed to \(model.effectiveSDKLocation.path), the standard location shared with Android Studio.")
-                    .font(.callout)
+                Text(
+                    """
+                    No Android SDK found. Components will be installed to \(model.effectiveSDKLocation.path), the \
+                    standard location shared with Android Studio.
+                    """
+                )
+                .font(.callout)
             }
-            component("Command-line tools (Android CLI, avdmanager)", installed: health?.commandLineToolsRevision, latest: tools,
-                      ok: model.hasCommandLineTools, enabled: true)
-            component("Android Emulator", installed: health?.emulatorRevision, latest: emulator,
-                      ok: health.map { $0.emulatorArchitectures.contains(arch) } ?? false, enabled: model.hasCommandLineTools)
-            component("Platform tools (adb)", installed: model.sdk?.platformToolsRevision, latest: platformTools,
-                      ok: health?.adbPresent ?? false, enabled: model.hasCommandLineTools)
+            component(
+                "Command-line tools (Android CLI, avdmanager)",
+                installed: health?.commandLineToolsRevision,
+                latest: tools,
+                ok: model.hasCommandLineTools,
+                enabled: true
+            )
+            component(
+                "Android Emulator",
+                installed: health?.emulatorRevision,
+                latest: emulator,
+                ok: health.map { $0.emulatorArchitectures.contains(arch) } ?? false,
+                enabled: model.hasCommandLineTools
+            )
+            component(
+                "Platform tools (adb)",
+                installed: model.sdk?.platformToolsRevision,
+                latest: platformTools,
+                ok: health?.adbPresent ?? false,
+                enabled: model.hasCommandLineTools
+            )
             if !model.hasCommandLineTools {
                 Text("Moorbox uses Google’s own tools to install packages and create devices, so install the command-line tools first.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -98,7 +138,6 @@ struct SetupView: View {
         }
     }
 
-    @ViewBuilder
     func component(_ name: String, installed: Revision?, latest: RemotePackage?, ok: Bool, enabled: Bool) -> some View {
         HStack {
             Check(ok: ok, installed.map { "\(name) \($0)" } ?? "\(name) — not installed")
@@ -117,7 +156,6 @@ struct SetupView: View {
         }
     }
 
-    @ViewBuilder
     var javaStep: some View {
         Step(number: 3, title: "Java runtime (for creating devices)", done: model.java != nil) {
             if let java = model.java {
@@ -129,8 +167,13 @@ struct SetupView: View {
                 JDKProgressView(progress: progress)
             } else {
                 Check(ok: false, "No Java 17 or newer found")
-                Text("Google’s avdmanager, which creates devices, needs Java. Moorbox looked in JAVA_HOME, Android Studio, and macOS’s Java registry. Running existing devices doesn’t need Java.")
-                    .font(.callout)
+                Text(
+                    """
+                    Google’s avdmanager, which creates devices, needs Java. Moorbox looked in JAVA_HOME, Android \
+                    Studio, and macOS’s Java registry. Running existing devices doesn’t need Java.
+                    """
+                )
+                .font(.callout)
                 HStack {
                     Button("Install Eclipse Temurin…") { confirmJDK = true }
                     Button("Check Again") { model.locateJava() }
@@ -158,7 +201,6 @@ struct SetupView: View {
         .disabled(!model.isRuntimeReady || !model.hasCommandLineTools)
     }
 
-    @ViewBuilder
     var deviceStep: some View {
         Step(number: 5, title: "Create and start a device", done: !model.devices.isEmpty) {
             if let device = model.devices.first {
@@ -166,7 +208,9 @@ struct SetupView: View {
                     Check(ok: true, "\(model.devices.count) device\(model.devices.count == 1 ? "" : "s"), e.g. \(device.displayName)")
                     Spacer()
                     let state = model.state(of: device)
-                    if state.isActive { StateBadge(state: state) } else {
+                    if state.isActive {
+                        StateBadge(state: state)
+                    } else {
                         Button("Start \(device.displayName)") { model.start(device) }.buttonStyle(.borderedProminent)
                     }
                 }
@@ -178,9 +222,13 @@ struct SetupView: View {
                     Button("Create Phone with \(image.displayName)") { quickCreate(image) }
                         .buttonStyle(.borderedProminent)
                         .disabled(creating || model.java == nil)
-                    if creating { ProgressView().controlSize(.small) }
+                    if creating {
+                        ProgressView().controlSize(.small)
+                    }
                 }
-                if let createError { Text(createError).foregroundStyle(.red).textSelection(.enabled) }
+                if let createError {
+                    Text(createError).foregroundStyle(.red).textSelection(.enabled)
+                }
             }
         }
         .disabled(model.installedImages.isEmpty || !model.isRuntimeReady || !model.hasCommandLineTools)
@@ -188,8 +236,12 @@ struct SetupView: View {
 
     func quickCreate(_ image: InstalledSystemImage) {
         let limits = ResourceLimits.compute(host: model.host, apiLevel: image.apiLevel)
-        let spec = DeviceSpec(displayName: "\(AndroidVersion.shortName(apiLevel: image.apiLevel)) Phone", image: image,
-                              profileID: "medium_phone", resources: limits.clamp(.balanced))
+        let spec = DeviceSpec(
+            displayName: "\(AndroidVersion.shortName(apiLevel: image.apiLevel)) Phone",
+            image: image,
+            profileID: "medium_phone",
+            resources: limits.clamp(.balanced)
+        )
         creating = true
         createError = nil
         Task {
@@ -204,7 +256,9 @@ struct SetupView: View {
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.message = "Choose an existing Android SDK folder, or an empty folder to install into."
-        if panel.runModal() == .OK, let url = panel.url { model.sdkPathOverride = url.path }
+        if panel.runModal() == .OK, let url = panel.url {
+            model.sdkPathOverride = url.path
+        }
     }
 }
 
@@ -217,7 +271,12 @@ struct JDKInstallSheet: View {
         let destination = JavaLocator.managedRoot(applicationSupport: AppModel.supportDirectory)
         VStack(alignment: .leading, spacing: 12) {
             Text("Install Eclipse Temurin JDK").font(.title2.bold())
-            Text("Google’s avdmanager needs Java 17 or newer to create devices. Eclipse Temurin is a free, open-source build of OpenJDK from the Eclipse Adoptium project.")
+            Text(
+                """
+                Google’s avdmanager needs Java 17 or newer to create devices. Eclipse Temurin is a free, \
+                open-source build of OpenJDK from the Eclipse Adoptium project.
+                """
+            )
             if let release = model.jdkRelease {
                 Grid(alignment: .leading, verticalSpacing: 4) {
                     GridRow { Text("Version").foregroundStyle(.secondary); Text("Temurin \(release.version)") }
@@ -240,7 +299,9 @@ struct JDKInstallSheet: View {
                 Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
                 Button("Download & Install") {
-                    if let release = model.jdkRelease { model.installJDK(release) }
+                    if let release = model.jdkRelease {
+                        model.installJDK(release)
+                    }
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
@@ -289,7 +350,11 @@ struct Step<Content: View>: View {
         HStack(alignment: .top, spacing: 14) {
             ZStack {
                 Circle().fill(done ? Color.green : Color.accentColor.opacity(0.15)).frame(width: 28, height: 28)
-                if done { Image(systemName: "checkmark").foregroundStyle(.white).bold() } else { Text("\(number)").bold() }
+                if done {
+                    Image(systemName: "checkmark").foregroundStyle(.white).bold()
+                } else {
+                    Text("\(number)").bold()
+                }
             }
             .accessibilityLabel(done ? "Step \(number), complete" : "Step \(number)")
             VStack(alignment: .leading, spacing: 8) {
@@ -304,7 +369,9 @@ struct Step<Content: View>: View {
 struct Check: View {
     let ok: Bool
     let text: String
-    init(ok: Bool, _ text: String) { self.ok = ok; self.text = text }
+    init(ok: Bool, _ text: String) {
+        self.ok = ok; self.text = text
+    }
 
     var body: some View {
         Label {

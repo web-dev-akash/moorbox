@@ -10,12 +10,30 @@ public struct VirtualDevice: Identifiable, Hashable, Sendable {
     /// `target` from `<id>.ini`, e.g. `android-36`.
     public var target: String?
 
-    public var displayName: String { config["avd.ini.displayname"] ?? id.replacingOccurrences(of: "_", with: " ") }
-    public var systemImageDirectory: String? { config["image.sysdir.1"] }
-    public var abi: String? { config["abi.type"] }
-    public var ramMB: Int? { config["hw.ramSize"].flatMap(Self.megabytes) }
-    public var cores: Int? { config["hw.cpu.ncore"].flatMap { Int($0) } }
-    public var tagDisplay: String? { config["tag.display"] }
+    public var displayName: String {
+        config["avd.ini.displayname"] ?? id.replacingOccurrences(of: "_", with: " ")
+    }
+
+    public var systemImageDirectory: String? {
+        config["image.sysdir.1"]
+    }
+
+    public var abi: String? {
+        config["abi.type"]
+    }
+
+    public var ramMB: Int? {
+        config["hw.ramSize"].flatMap(Self.megabytes)
+    }
+
+    public var cores: Int? {
+        config["hw.cpu.ncore"].flatMap { Int($0) }
+    }
+
+    public var tagDisplay: String? {
+        config["tag.display"]
+    }
+
     public var resolution: String? {
         guard let w = config["hw.lcd.width"], let h = config["hw.lcd.height"] else { return nil }
         return "\(w)×\(h)" + (config["hw.lcd.density"].map { " @ \($0) dpi" } ?? "")
@@ -43,8 +61,12 @@ public struct VirtualDevice: Identifiable, Hashable, Sendable {
     /// Accepts "2048", "2048M", "2G" (all forms appear in real config files).
     static func megabytes(_ text: String) -> Int? {
         let t = text.trimmingCharacters(in: .whitespaces).uppercased()
-        if t.hasSuffix("G"), let n = Int(t.dropLast()) { return n * 1024 }
-        if t.hasSuffix("M") || t.hasSuffix("MB") { return Int(t.trimmingCharacters(in: .letters)) }
+        if t.hasSuffix("G"), let n = Int(t.dropLast()) {
+            return n * 1024
+        }
+        if t.hasSuffix("M") || t.hasSuffix("MB") {
+            return Int(t.trimmingCharacters(in: .letters))
+        }
         return Int(t)
     }
 }
@@ -57,12 +79,30 @@ public struct ResourcePreset: Hashable, Sendable, Identifiable {
     public var cores: Int
     public var storageGB: Int
 
-    public static let lightweight = ResourcePreset(id: "lightweight", name: "Lightweight",
-        summary: "Conservative allocation for everyday use", ramMB: 2048, cores: 2, storageGB: 4)
-    public static let balanced = ResourcePreset(id: "balanced", name: "Balanced",
-        summary: "A reasonable default for app testing", ramMB: 4096, cores: 4, storageGB: 6)
-    public static let performance = ResourcePreset(id: "performance", name: "Performance",
-        summary: "More resources for demanding apps", ramMB: 6144, cores: 6, storageGB: 8)
+    public static let lightweight = ResourcePreset(
+        id: "lightweight",
+        name: "Lightweight",
+        summary: "Conservative allocation for everyday use",
+        ramMB: 2048,
+        cores: 2,
+        storageGB: 4
+    )
+    public static let balanced = ResourcePreset(
+        id: "balanced",
+        name: "Balanced",
+        summary: "A reasonable default for app testing",
+        ramMB: 4096,
+        cores: 4,
+        storageGB: 6
+    )
+    public static let performance = ResourcePreset(
+        id: "performance",
+        name: "Performance",
+        summary: "More resources for demanding apps",
+        ramMB: 6144,
+        cores: 6,
+        storageGB: 8
+    )
     public static let all = [lightweight, balanced, performance]
 }
 
@@ -79,7 +119,7 @@ public struct ResourceLimits: Equatable, Sendable {
         let minRAM = AndroidVersion.parse(apiLevel).major >= 37 ? 4096 : 2048
         let maxRAM = max(minRAM, min(8192, host.physicalMemoryMB / 2 / 512 * 512))
         let maxCores = max(1, min(8, host.cpuCount - 2))
-        return ResourceLimits(ramMB: minRAM...maxRAM, cores: 1...maxCores, storageGB: 2...64)
+        return ResourceLimits(ramMB: minRAM ... maxRAM, cores: 1 ... maxCores, storageGB: 2 ... 64)
     }
 
     public func clamp(_ preset: ResourcePreset) -> ResourcePreset {
@@ -93,7 +133,10 @@ public struct ResourceLimits: Equatable, Sendable {
 
 public enum GPUMode: String, CaseIterable, Sendable, Identifiable {
     case auto, host, swiftshader
-    public var id: String { rawValue }
+    public var id: String {
+        rawValue
+    }
+
     public var label: String {
         switch self {
         case .auto: "Automatic (recommended)"
@@ -113,14 +156,19 @@ public struct DeviceSpec: Sendable, Equatable {
     public var storageGB: Int
     public var gpu: GPUMode = .auto
 
-    public init(displayName: String, image: InstalledSystemImage, profileID: String,
-                resources: ResourcePreset, gpu: GPUMode = .auto) {
+    public init(
+        displayName: String,
+        image: InstalledSystemImage,
+        profileID: String,
+        resources: ResourcePreset,
+        gpu: GPUMode = .auto
+    ) {
         self.displayName = displayName
         self.image = image
         self.profileID = profileID
-        self.ramMB = resources.ramMB
-        self.cores = resources.cores
-        self.storageGB = resources.storageGB
+        ramMB = resources.ramMB
+        cores = resources.cores
+        storageGB = resources.storageGB
         self.gpu = gpu
     }
 }
@@ -144,15 +192,21 @@ public enum AVDError: LocalizedError, Equatable {
 public struct AVDStore: Sendable {
     public let home: URL
 
-    public init(home: URL) { self.home = home }
+    public init(home: URL) {
+        self.home = home
+    }
 
     /// Same lookup order as the emulator: $ANDROID_AVD_HOME, $ANDROID_USER_HOME/avd, ~/.android/avd.
     public static func defaultHome(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         home: URL = FileManager.default.homeDirectoryForCurrentUser
     ) -> URL {
-        if let v = environment["ANDROID_AVD_HOME"], !v.isEmpty { return URL(fileURLWithPath: v) }
-        if let v = environment["ANDROID_USER_HOME"], !v.isEmpty { return URL(fileURLWithPath: v).appendingPathComponent("avd") }
+        if let v = environment["ANDROID_AVD_HOME"], !v.isEmpty {
+            return URL(fileURLWithPath: v)
+        }
+        if let v = environment["ANDROID_USER_HOME"], !v.isEmpty {
+            return URL(fileURLWithPath: v).appendingPathComponent("avd")
+        }
         return home.appendingPathComponent(".android/avd")
     }
 
@@ -180,9 +234,15 @@ public struct AVDStore: Sendable {
 
     public static func validate(_ spec: DeviceSpec, limits: ResourceLimits) throws {
         let name = spec.displayName.trimmingCharacters(in: .whitespaces)
-        if name.isEmpty { throw AVDError.invalidName("enter a name") }
-        if name.count > 60 { throw AVDError.invalidName("use 60 characters or fewer") }
-        if makeID(from: name).isEmpty { throw AVDError.invalidName("include at least one letter or digit") }
+        if name.isEmpty {
+            throw AVDError.invalidName("enter a name")
+        }
+        if name.count > 60 {
+            throw AVDError.invalidName("use 60 characters or fewer")
+        }
+        if makeID(from: name).isEmpty {
+            throw AVDError.invalidName("include at least one letter or digit")
+        }
         if !limits.ramMB.contains(spec.ramMB) {
             throw AVDError.outOfRange("Memory must be between \(limits.ramMB.lowerBound) and \(limits.ramMB.upperBound) MB for this Android version and Mac.")
         }
@@ -252,7 +312,9 @@ public struct AVDStore: Sendable {
     /// Removes the quick-boot snapshot only; installed apps and user data are kept.
     public func deleteQuickBootSnapshot(_ device: VirtualDevice) throws {
         let snapshot = device.directory.appendingPathComponent("snapshots/default_boot")
-        if FileManager.default.fileExists(atPath: snapshot.path) { try FileManager.default.removeItem(at: snapshot) }
+        if FileManager.default.fileExists(atPath: snapshot.path) {
+            try FileManager.default.removeItem(at: snapshot)
+        }
     }
 
     /// Allocated (not logical) size, since the emulator's disk images are sparse.

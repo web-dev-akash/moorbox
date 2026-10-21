@@ -15,12 +15,20 @@ struct CreateDeviceView: View {
     @State private var error: String?
     @State private var creating = false
 
-    var image: InstalledSystemImage? { model.installedImages.first { $0.id == imageID } }
-    var limits: ResourceLimits { ResourceLimits.compute(host: model.host, apiLevel: image?.apiLevel ?? "0") }
+    var image: InstalledSystemImage? {
+        model.installedImages.first { $0.id == imageID }
+    }
+
+    var limits: ResourceLimits {
+        ResourceLimits.compute(host: model.host, apiLevel: image?.apiLevel ?? "0")
+    }
+
     /// Generic profiles first, then the rest alphabetically.
     var profiles: [HardwareProfile] {
         model.hardwareProfiles.sorted { a, b in
-            if (a.oem == "Generic") != (b.oem == "Generic") { return a.oem == "Generic" }
+            if (a.oem == "Generic") != (b.oem == "Generic") {
+                return a.oem == "Generic"
+            }
             return a.name.localizedStandardCompare(b.name) == .orderedAscending
         }
     }
@@ -42,7 +50,9 @@ struct CreateDeviceView: View {
             HStack {
                 Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
-                if creating { ProgressView().controlSize(.small); Text("Creating with avdmanager…").font(.callout) }
+                if creating {
+                    ProgressView().controlSize(.small); Text("Creating with avdmanager…").font(.callout)
+                }
                 Button("Create") { create(start: false) }.disabled(!canCreate)
                 Button("Create & Start") { create(start: true) }
                     .keyboardShortcut(.defaultAction)
@@ -62,9 +72,18 @@ struct CreateDeviceView: View {
     }
 
     var missingRequirement: String? {
-        if !model.hasCommandLineTools { return "Moorbox creates devices with Google’s avdmanager, part of the Android SDK command-line tools, which aren’t installed yet." }
-        if model.java == nil { return "Google’s avdmanager needs a Java runtime (JDK 17 or newer). Setup can find one on this Mac or install Eclipse Temurin for you." }
-        if model.installedImages.isEmpty { return "Install an Android version first." }
+        if !model
+            .hasCommandLineTools {
+            return "Moorbox creates devices with Google’s avdmanager, part of the Android SDK command-line tools, which aren’t installed yet."
+        }
+        if model
+            .java ==
+            nil {
+            return "Google’s avdmanager needs a Java runtime (JDK 17 or newer). Setup can find one on this Mac or install Eclipse Temurin for you."
+        }
+        if model.installedImages.isEmpty {
+            return "Install an Android version first."
+        }
         return nil
     }
 
@@ -106,10 +125,18 @@ struct CreateDeviceView: View {
                     ForEach(GPUMode.allCases) { Text($0.label).tag($0) }
                 }
             } footer: {
-                Text("Hardware profiles come from Google’s avdmanager. Limits come from the Android version and this Mac (\(model.host.physicalMemoryMB / 1024) GB RAM, \(model.host.cpuCount) cores); Android 17 (API 37) and newer need at least 4 GB.")
-                    .font(.caption).foregroundStyle(.secondary)
+                Text(
+                    """
+                    Hardware profiles come from Google’s avdmanager. Limits come from the Android version and this \
+                    Mac (\(model.host.physicalMemoryMB / 1024) GB RAM, \(model.host.cpuCount) cores); Android 17 \
+                    (API 37) and newer need at least 4 GB.
+                    """
+                )
+                .font(.caption).foregroundStyle(.secondary)
             }
-            if let error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
+            if let error {
+                Text(error).foregroundStyle(.red).textSelection(.enabled)
+            }
         }
         .formStyle(.grouped)
     }
@@ -122,7 +149,9 @@ struct CreateDeviceView: View {
     func suggestedName() -> String {
         let base = image.map { "\(AndroidVersion.shortName(apiLevel: $0.apiLevel)) Phone" } ?? "Phone"
         var name = base, n = 2
-        while model.devices.contains(where: { $0.displayName == name }) { name = "\(base) \(n)"; n += 1 }
+        while model.devices.contains(where: { $0.displayName == name }) {
+            name = "\(base) \(n)"; n += 1
+        }
         return name
     }
 
@@ -135,7 +164,9 @@ struct CreateDeviceView: View {
         Task {
             do {
                 let device = try await model.create(spec)
-                if start { model.start(device) }
+                if start {
+                    model.start(device)
+                }
                 dismiss()
             } catch {
                 self.error = error.localizedDescription

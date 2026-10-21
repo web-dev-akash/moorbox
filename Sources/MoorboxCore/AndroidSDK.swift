@@ -15,9 +15,17 @@ public struct InstalledSystemImage: Hashable, Sendable, Identifiable {
     public var abi: String
     public var revision: String?
 
-    public var id: String { packagePath }
-    public var hasPlayStore: Bool { tagID.contains("playstore") }
-    public var displayName: String { AndroidVersion.displayName(apiLevel: apiLevel, codename: codename) }
+    public var id: String {
+        packagePath
+    }
+
+    public var hasPlayStore: Bool {
+        tagID.contains("playstore")
+    }
+
+    public var displayName: String {
+        AndroidVersion.displayName(apiLevel: apiLevel, codename: codename)
+    }
 }
 
 /// What the app found when it inspected an SDK directory.
@@ -28,17 +36,29 @@ public struct SDKHealth: Sendable {
     public var adbPresent: Bool
     public var problems: [String]
 
-    public var isReady: Bool { problems.isEmpty }
+    public var isReady: Bool {
+        problems.isEmpty
+    }
 }
 
 public struct AndroidSDK: Hashable, Sendable {
     public let root: URL
 
-    public init(root: URL) { self.root = root.standardizedFileURL }
+    public init(root: URL) {
+        self.root = root.standardizedFileURL
+    }
 
-    public var emulatorBinary: URL { root.appendingPathComponent("emulator/emulator") }
-    public var adbBinary: URL { root.appendingPathComponent("platform-tools/adb") }
-    public var licensesDirectory: URL { root.appendingPathComponent("licenses") }
+    public var emulatorBinary: URL {
+        root.appendingPathComponent("emulator/emulator")
+    }
+
+    public var adbBinary: URL {
+        root.appendingPathComponent("platform-tools/adb")
+    }
+
+    public var licensesDirectory: URL {
+        root.appendingPathComponent("licenses")
+    }
 
     public var emulatorRevision: Revision? {
         Properties.read(root.appendingPathComponent("emulator/source.properties"))?["Pkg.Revision"]
@@ -71,9 +91,13 @@ public struct AndroidSDK: Hashable, Sendable {
         home: URL = FileManager.default.homeDirectoryForCurrentUser
     ) -> [URL] {
         var urls: [URL] = []
-        if let preferred { urls.append(preferred) }
+        if let preferred {
+            urls.append(preferred)
+        }
         for key in ["ANDROID_HOME", "ANDROID_SDK_ROOT"] {
-            if let value = environment[key], !value.isEmpty { urls.append(URL(fileURLWithPath: value)) }
+            if let value = environment[key], !value.isEmpty {
+                urls.append(URL(fileURLWithPath: value))
+            }
         }
         urls.append(defaultLocation(home: home))
         var seen = Set<String>()
@@ -102,12 +126,23 @@ public struct AndroidSDK: Hashable, Sendable {
         if !fm.isExecutableFile(atPath: emulatorBinary.path) {
             problems.append("The Android Emulator is not installed in this SDK.")
         } else if !archs.contains(host.architecture) {
-            problems.append("The installed emulator is built for \(archs.map(\.rawValue).sorted().joined(separator: ", ")), not this Mac (\(host.architecture.rawValue)). Reinstall the emulator for this architecture.")
+            let built = archs.map(\.rawValue).sorted().joined(separator: ", ")
+            problems.append("""
+            The installed emulator is built for \(built), not this Mac (\(host.architecture.rawValue)). \
+            Reinstall the emulator for this architecture.
+            """)
         }
         let adb = fm.isExecutableFile(atPath: adbBinary.path)
-        if !adb { problems.append("Android platform-tools (adb) are not installed in this SDK.") }
-        return SDKHealth(commandLineToolsRevision: commandLineToolsRevision, emulatorRevision: revision,
-                         emulatorArchitectures: archs, adbPresent: adb, problems: problems)
+        if !adb {
+            problems.append("Android platform-tools (adb) are not installed in this SDK.")
+        }
+        return SDKHealth(
+            commandLineToolsRevision: commandLineToolsRevision,
+            emulatorRevision: revision,
+            emulatorArchitectures: archs,
+            adbPresent: adb,
+            problems: problems
+        )
     }
 
     /// Scans `system-images/<platform>/<tag>/<abi>/`.

@@ -20,10 +20,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      - name: Build test APK
-        run: scripts/build-test-apk.sh
       - name: Integration tests
         env:
           MOORBOX_INTEGRATION: '1'
           MOORBOX_INTEGRATION_FRESH: ${{ inputs.fresh && '1' || '0' }}
-        run: swift test --filter IntegrationTests
+        run: make test-integration

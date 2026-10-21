@@ -23,7 +23,9 @@ public enum ADBError: LocalizedError, Equatable {
 public struct ADB: Sendable {
     public let executable: URL
 
-    public init(executable: URL) { self.executable = executable }
+    public init(executable: URL) {
+        self.executable = executable
+    }
 
     public func run(_ arguments: [String], timeout: TimeInterval = 30) async throws -> CommandResult {
         try await Shell.run(executable, arguments, timeout: timeout)
@@ -43,7 +45,7 @@ public struct ADB: Sendable {
     }
 
     public func version() async -> String? {
-        (try? await run(["version"], timeout: 10)).flatMap { Self.parseVersion($0.stdout) }
+        await (try? run(["version"], timeout: 10)).flatMap { Self.parseVersion($0.stdout) }
     }
 
     public struct OtherInstallation: Hashable, Sendable {
@@ -94,7 +96,9 @@ public struct ADB: Sendable {
         while Date() < deadline {
             try Task.checkCancellation()
             guard processAlive() else { throw ADBError.commandFailed("The emulator exited before Android finished booting.") }
-            if await isBootCompleted(serial) { return }
+            if await isBootCompleted(serial) {
+                return
+            }
             try await Task.sleep(for: .seconds(1))
         }
         throw ADBError.bootTimedOut(Int(timeout))
@@ -110,8 +114,7 @@ public struct ADB: Sendable {
 
     /// Checks the extension and the ZIP signature, so a renamed file fails early with a clear message.
     public static func validateAPK(_ url: URL) throws {
-        guard url.pathExtension.lowercased() == "apk" else { throw ADBError.notAnAPK(url.lastPathComponent) }
-        guard let handle = try? FileHandle(forReadingFrom: url), let magic = try? handle.read(upToCount: 4),
+        guard url.pathExtension.lowercased() == "apk", let handle = try? FileHandle(forReadingFrom: url), let magic = try? handle.read(upToCount: 4),
               magic == Data([0x50, 0x4B, 0x03, 0x04]) else { throw ADBError.notAnAPK(url.lastPathComponent) }
         try? handle.close()
     }
@@ -119,7 +122,9 @@ public struct ADB: Sendable {
     public func install(_ apk: URL, serial: String) async throws -> String {
         try Self.validateAPK(apk)
         let r = try await run(["-s", serial, "install", "-r", apk.path], timeout: 600)
-        if r.succeeded, r.stdout.contains("Success") { return r.combined }
+        if r.succeeded, r.stdout.contains("Success") {
+            return r.combined
+        }
         throw Self.installError(from: r.combined)
     }
 
@@ -173,11 +178,23 @@ public struct ADB: Sendable {
 
     public func launch(_ package: String, serial: String) async throws {
         guard Self.isValidPackageName(package) else { throw ADBError.invalidPackageName(package) }
-        let resolved = try await check(serial, ["shell", "cmd", "package", "resolve-activity", "--brief",
-                                                "-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER", package])
+        let resolved = try await check(serial, [
+            "shell",
+            "cmd",
+            "package",
+            "resolve-activity",
+            "--brief",
+            "-a",
+            "android.intent.action.MAIN",
+            "-c",
+            "android.intent.category.LAUNCHER",
+            package,
+        ])
         guard let component = Self.parseResolvedActivity(resolved.stdout) else { throw ADBError.noLaunchableActivity(package) }
         let r = try await check(serial, ["shell", "am", "start", "-n", component])
-        if r.stdout.contains("Error") { throw ADBError.commandFailed(r.combined) }
+        if r.stdout.contains("Error") {
+            throw ADBError.commandFailed(r.combined)
+        }
     }
 
     // MARK: Device controls

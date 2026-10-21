@@ -1,0 +1,7 @@
+# Tests may force-unwrap fixtures, embed long data strings and have long scenario tests.
+disabled_rules:
+  - force_unwrapping
+  - function_body_length
+line_length:
+  warning: 220
+  error: 260

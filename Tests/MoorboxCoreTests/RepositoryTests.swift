@@ -1,6 +1,6 @@
 import Foundation
-import Testing
 @testable import MoorboxCore
+import Testing
 
 func fixture(_ name: String) throws -> Data {
     let url = try #require(Bundle.module.url(forResource: "Fixtures/\(name)", withExtension: nil))
@@ -9,12 +9,14 @@ func fixture(_ name: String) throws -> Data {
 
 func loadCatalog() throws -> Catalog {
     var catalog = try RepositoryParser.parse(fixture("repository2-3.xml"), baseURL: SDKRepository.baseURL)
-    catalog.merge(try RepositoryParser.parse(fixture("sys-img-google_apis.xml"),
-                                             baseURL: SDKRepository.baseURL.appendingPathComponent("sys-img/google_apis/")))
+    try catalog.merge(RepositoryParser.parse(
+        fixture("sys-img-google_apis.xml"),
+        baseURL: SDKRepository.baseURL.appendingPathComponent("sys-img/google_apis/")
+    ))
     return catalog
 }
 
-@Suite struct RepositoryParserTests {
+struct RepositoryParserTests {
     @Test func parsesHostPackagesAndChannels() throws {
         let catalog = try loadCatalog()
         let emulators = catalog.packages.filter { $0.path == "emulator" }
@@ -84,8 +86,17 @@ func loadCatalog() throws -> Catalog {
 
     @Test func installDirectoryRejectsTraversal() {
         func pkg(_ path: String) -> RemotePackage {
-            RemotePackage(path: path, displayName: path, revision: Revision(1), licenseID: nil, channel: "stable",
-                          obsolete: false, archives: [], systemImage: nil, minEmulatorRevision: nil)
+            RemotePackage(
+                path: path,
+                displayName: path,
+                revision: Revision(1),
+                licenseID: nil,
+                channel: "stable",
+                obsolete: false,
+                archives: [],
+                systemImage: nil,
+                minEmulatorRevision: nil
+            )
         }
         #expect(pkg("system-images;android-36;google_apis;arm64-v8a").installDirectory == "system-images/android-36/google_apis/arm64-v8a")
         #expect(pkg("emulator").installDirectory == "emulator")
@@ -93,10 +104,9 @@ func loadCatalog() throws -> Catalog {
         #expect(pkg("a;b/c").installDirectory == nil)
         #expect(pkg("a;;b").installDirectory == nil)
     }
-
 }
 
-@Suite struct VersionTests {
+struct VersionTests {
     @Test func revisionParsingAndOrdering() {
         #expect(Revision(string: "36.5.11.0") == Revision(36, 5, 11))
         #expect(Revision(string: "14") == Revision(14))

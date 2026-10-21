@@ -1,6 +1,6 @@
 import Foundation
-import Testing
 @testable import MoorboxCore
+import Testing
 
 /// A fresh temporary directory, removed when the test ends.
 final class TempDir {
@@ -9,6 +9,7 @@ final class TempDir {
         url = FileManager.default.temporaryDirectory.appendingPathComponent("moorbox-tests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     }
+
     deinit { try? FileManager.default.removeItem(at: url) }
 
     func write(_ relative: String, _ content: String = "") throws {
@@ -18,12 +19,13 @@ final class TempDir {
     }
 }
 
-@Suite struct SDKDiscoveryTests {
+struct SDKDiscoveryTests {
     @Test func candidateOrderAndDeduplication() {
         let home = URL(fileURLWithPath: "/Users/test")
         let urls = AndroidSDK.candidateLocations(
             preferred: URL(fileURLWithPath: "/custom"),
-            environment: ["ANDROID_HOME": "/env/home", "ANDROID_SDK_ROOT": "/custom"], home: home)
+            environment: ["ANDROID_HOME": "/env/home", "ANDROID_SDK_ROOT": "/custom"], home: home
+        )
         #expect(urls.map(\.path) == ["/custom", "/env/home", "/Users/test/Library/Android/sdk"])
     }
 
@@ -31,8 +33,11 @@ final class TempDir {
         let tmp = try TempDir()
         try tmp.write("empty/README")
         try tmp.write("sdk/platform-tools/adb")
-        let found = AndroidSDK.discover(preferred: tmp.url.appendingPathComponent("empty"),
-                                        environment: ["ANDROID_HOME": tmp.url.appendingPathComponent("sdk").path], home: tmp.url)
+        let found = AndroidSDK.discover(
+            preferred: tmp.url.appendingPathComponent("empty"),
+            environment: ["ANDROID_HOME": tmp.url.appendingPathComponent("sdk").path],
+            home: tmp.url
+        )
         #expect(found?.root.lastPathComponent == "sdk")
         #expect(AndroidSDK.discover(preferred: nil, environment: [:], home: tmp.url) == nil)
     }
@@ -60,12 +65,12 @@ final class TempDir {
         let tmp = try TempDir()
         try tmp.write("system-images/android-34/google_apis/arm64-v8a/system.img")
         try tmp.write("system-images/android-34/google_apis/arm64-v8a/source.properties", """
-            Pkg.Revision=14
-            AndroidVersion.ApiLevel=34
-            SystemImage.Abi=arm64-v8a
-            SystemImage.TagId=google_apis
-            SystemImage.TagDisplay=Google APIs
-            """)
+        Pkg.Revision=14
+        AndroidVersion.ApiLevel=34
+        SystemImage.Abi=arm64-v8a
+        SystemImage.TagId=google_apis
+        SystemImage.TagDisplay=Google APIs
+        """)
         try tmp.write("system-images/android-36/default/arm64-v8a/system.img")
         try tmp.write("system-images/android-36/default/arm64-v8a/source.properties", "AndroidVersion.ApiLevel=36\n")
         try tmp.write("system-images/android-35/broken/arm64-v8a/source.properties", "AndroidVersion.ApiLevel=35\n") // no system.img
@@ -99,8 +104,10 @@ final class TempDir {
         let sdk = AndroidSDK(root: tmp.url)
         #expect(sdk.commandLineToolsRevision == nil)
         try tmp.write("cmdline-tools/latest/bin/android", "#!/bin/sh\n")
-        try FileManager.default.setAttributes([.posixPermissions: 0o755],
-                                              ofItemAtPath: tmp.url.appendingPathComponent("cmdline-tools/latest/bin/android").path)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755],
+            ofItemAtPath: tmp.url.appendingPathComponent("cmdline-tools/latest/bin/android").path
+        )
         try tmp.write("cmdline-tools/latest/source.properties", "Pkg.Revision=23.0\nPkg.Path=cmdline-tools;23.0\n")
         #expect(sdk.commandLineToolsRevision == Revision(23, 0))
         // An SDK holding only cmdline-tools is still discovered.
@@ -108,7 +115,7 @@ final class TempDir {
     }
 }
 
-@Suite struct HostTests {
+struct HostTests {
     @Test func machOThinAndFat() {
         var thin = Data([0xCF, 0xFA, 0xED, 0xFE, 0x0C, 0x00, 0x00, 0x01])
         thin.append(Data(count: 24))
@@ -127,7 +134,7 @@ final class TempDir {
         #expect(host.physicalMemory > 0)
         #expect(host.cpuCount > 0)
         #if arch(arm64)
-        #expect(host.architecture == .arm64)
+            #expect(host.architecture == .arm64)
         #endif
     }
 

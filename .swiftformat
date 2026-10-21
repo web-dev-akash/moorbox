@@ -1,0 +1,11 @@
+# SwiftFormat configuration (https://github.com/nicklockwood/SwiftFormat)
+--swiftversion 6.0
+--indent 4
+--maxwidth 160
+--wraparguments before-first
+--wrapcollections before-first
+--self remove
+--stripunusedargs closure-only
+--header ignore
+--disable redundantReturn,wrapMultilineStatementBraces,blankLinesAroundMark
+--exclude .build,dist,Moorbox.xcodeproj

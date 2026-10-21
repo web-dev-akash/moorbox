@@ -7,60 +7,43 @@ on:
 permissions:
   contents: write
 
+env:
+  HOMEBREW_NO_AUTO_UPDATE: '1'
+
 jobs:
   release:
     runs-on: macos-26
-    env:
-      HAS_SIGNING: ${{ secrets.MACOS_CERT_P12_BASE64 != '' }}
-      HAS_NOTARY: ${{ secrets.AC_API_KEY_P8_BASE64 != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - name: Tag matches VERSION
         run: test "v$(cat VERSION)" = "${GITHUB_REF_NAME}"
-      - name: Test
-        run: swift test
-      - name: Import signing certificate (optional)
-        # Configure these repository secrets to produce a Developer ID–signed build:
-        #   MACOS_CERT_P12_BASE64, MACOS_CERT_PASSWORD, MACOS_SIGN_IDENTITY
-        # and, for notarization, AC_API_KEY_ID, AC_API_ISSUER_ID, AC_API_KEY_P8_BASE64.
-        if: env.HAS_SIGNING == 'true'
-        env:
-          MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
-          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+      - name: Install build tools
+        run: brew install xcodegen create-dmg
+      - name: Tests
         run: |
-          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
-          KEYCHAIN_PASSWORD="$(uuidgen)"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-          echo "$MACOS_CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
-          security import "$RUNNER_TEMP/cert.p12" -P "$MACOS_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
-          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
-          rm "$RUNNER_TEMP/cert.p12"
-      - name: Store notarization credentials (optional)
-        if: env.HAS_NOTARY == 'true'
-        env:
-          AC_API_KEY_P8_BASE64: ${{ secrets.AC_API_KEY_P8_BASE64 }}
-          AC_API_KEY_ID: ${{ secrets.AC_API_KEY_ID }}
-          AC_API_ISSUER_ID: ${{ secrets.AC_API_ISSUER_ID }}
+          swift test
+          make test-ui
+      - name: Universal Release build + DMG
+        run: make dmg
+      - name: Source tarball checksum (for the Homebrew formula)
         run: |
-          echo "$AC_API_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/key.p8"
-          xcrun notarytool store-credentials moorbox-ci --key "$RUNNER_TEMP/key.p8" \
-            --key-id "$AC_API_KEY_ID" --issuer "$AC_API_ISSUER_ID"
-          echo "NOTARY_PROFILE=moorbox-ci" >> "$GITHUB_ENV"
-          rm "$RUNNER_TEMP/key.p8"
-      - name: Build universal app
-        env:
-          UNIVERSAL: '1'
-          CODESIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
-        run: scripts/package-app.sh
-      - name: Publish GitHub release
+          curl -fsSL "https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${GITHUB_REF_NAME}.tar.gz" -o source.tar.gz
+          echo "SOURCE_SHA256=$(shasum -a 256 source.tar.gz | cut -d' ' -f1)" >> "$GITHUB_ENV"
+      - name: Draft GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           NOTES=$(awk "/^## \\[$(cat VERSION)\\]/{f=1;next} /^## \\[/{f=0} f" CHANGELOG.md)
-          gh release create "$GITHUB_REF_NAME" dist/Moorbox-*.zip dist/Moorbox-*.zip.sha256 \
-            --title "Moorbox $(cat VERSION)" --notes "$NOTES" --draft
+          {
+            echo "$NOTES"
+            echo
+            echo "### Install"
+            echo "- **DMG:** open it and drag Moorbox to Applications. The build is not notarized: on first launch, open System Settings → Privacy & Security and click **Open Anyway**."
+            echo "- **Homebrew (builds from source, needs Xcode):** \`brew install web-dev-akash/moorbox/moorbox\`"
+            echo
+            echo "Formula values for this release: \`url \"https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${GITHUB_REF_NAME}.tar.gz\"\`, \`sha256 \"${SOURCE_SHA256}\"\`"
+          } > notes.md
+          gh release create "$GITHUB_REF_NAME" dist/Moorbox-*.dmg dist/Moorbox-*.dmg.sha256 dist/Moorbox-*.zip dist/Moorbox-*.zip.sha256 \
+            --title "Moorbox $(cat VERSION)" --notes-file notes.md --draft

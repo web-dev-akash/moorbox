@@ -1,6 +1,6 @@
 import Foundation
-import Testing
 @testable import MoorboxCore
+import Testing
 
 /// Opt-in tests against the real network, Google's tools and the emulator. They never
 /// modify your SDK or devices: each uses its own SDK and AVD folders.
@@ -16,9 +16,13 @@ import Testing
 let integrationEnabled = ProcessInfo.processInfo.environment["MOORBOX_INTEGRATION"] == "1"
 let env = ProcessInfo.processInfo.environment
 
-func log(_ message: String) { print("[integration] \(message)") }
+func log(_ message: String) {
+    print("[integration] \(message)")
+}
 
-func elapsed(_ since: Date) -> String { String(format: "%.1fs", Date().timeIntervalSince(since)) }
+func elapsed(_ since: Date) -> String {
+    String(format: "%.1fs", Date().timeIntervalSince(since))
+}
 
 @Suite(.serialized, .enabled(if: integrationEnabled))
 struct IntegrationTests {
@@ -75,7 +79,11 @@ struct IntegrationTests {
 
         let first = PhaseLog()
         let task = Task { try await CommandLineToolsInstaller.install(pkg, into: sdk, host: host.architecture) { first.append($0) } }
-        while !first.values.contains(where: { if case let .downloading(r, _) = $0 { return r > 2_000_000 }; return false }) {
+        while !first.values.contains(where: {
+            if case let .downloading(r, _) = $0 {
+                return r > 2_000_000
+            }; return false
+        }) {
             try await Task.sleep(for: .milliseconds(20))
         }
         task.cancel()
@@ -86,7 +94,11 @@ struct IntegrationTests {
 
         let second = PhaseLog()
         try await CommandLineToolsInstaller.install(pkg, into: sdk, host: host.architecture) { second.append($0) }
-        guard case let .downloading(resumedAt, _)? = second.values.first(where: { if case .downloading = $0 { return true }; return false }) else {
+        guard case let .downloading(resumedAt, _)? = second.values.first(where: {
+            if case .downloading = $0 {
+                return true
+            }; return false
+        }) else {
             Issue.record("no download progress reported"); return
         }
         log("resumed download at \(resumedAt) bytes")
@@ -113,8 +125,10 @@ struct IntegrationTests {
     /// app data persisted → uninstall → stop.
     @Test(.timeLimit(.minutes(25)))
     func deviceLifecycleWithOfficialTools() async throws {
-        let java = try #require(await JavaLocator.find(managedRoot: URL(fileURLWithPath: "/nonexistent")),
-                                "No JDK 17+ found (avdmanager needs one)")
+        let java = try #require(
+            await JavaLocator.find(managedRoot: URL(fileURLWithPath: "/nonexistent")),
+            "No JDK 17+ found (avdmanager needs one)"
+        )
         let tmp = try TempDir()
         let (sdk, image) = try await preparedSDK(in: tmp)
         let store = AVDStore(home: tmp.url.appendingPathComponent("avd"))
@@ -126,8 +140,12 @@ struct IntegrationTests {
         let profiles = try await manager.listDevices()
         #expect(profiles.contains { $0.id == "medium_phone" })
         let limits = ResourceLimits.compute(host: host, apiLevel: image.apiLevel)
-        let spec = DeviceSpec(displayName: "Moorbox IT \(UUID().uuidString.prefix(6))", image: image,
-                              profileID: "medium_phone", resources: limits.clamp(.lightweight))
+        let spec = DeviceSpec(
+            displayName: "Moorbox IT \(UUID().uuidString.prefix(6))",
+            image: image,
+            profileID: "medium_phone",
+            resources: limits.clamp(.lightweight)
+        )
         var t0 = Date()
         let device = try await store.create(spec, limits: limits, using: manager)
         log("avdmanager created \(device.id) (\(image.packagePath), Java \(java.version) from \(java.source.rawValue)) in \(elapsed(t0))")
@@ -137,7 +155,11 @@ struct IntegrationTests {
 
         t0 = Date()
         let pid = try runtime.start(device, options: StartOptions(coldBoot: true, headless: true))
-        defer { if Shell.isAlive(pid) { kill(pid, SIGKILL) }; var s: Int32 = 0; waitpid(pid, &s, WNOHANG) }
+        defer {
+            if Shell.isAlive(pid) {
+                kill(pid, SIGKILL)
+            }; var s: Int32 = 0; waitpid(pid, &s, WNOHANG)
+        }
         let instance = try await waitForInstance(runtime, device, pid: pid)
         #expect(instance.pid == pid)
         #expect(throws: RuntimeError.alreadyRunning(device.displayName)) {
@@ -166,7 +188,7 @@ struct IntegrationTests {
         #expect(try await adb.screenshotPNG(serial: instance.serial).count > 1000)
         try await adb.emulatorConsole(["rotate"], serial: instance.serial)
         try await adb.press(.home, serial: instance.serial)
-        #expect(!(try await adb.logcat(serial: instance.serial, lines: 50)).isEmpty)
+        #expect(try await !(adb.logcat(serial: instance.serial, lines: 50)).isEmpty)
 
         t0 = Date()
         try await runtime.stop(instance, timeout: 120)
@@ -178,7 +200,11 @@ struct IntegrationTests {
 
         t0 = Date()
         let pid2 = try runtime.start(device, options: StartOptions(headless: true))
-        defer { if Shell.isAlive(pid2) { kill(pid2, SIGKILL) }; var s: Int32 = 0; waitpid(pid2, &s, WNOHANG) }
+        defer {
+            if Shell.isAlive(pid2) {
+                kill(pid2, SIGKILL)
+            }; var s: Int32 = 0; waitpid(pid2, &s, WNOHANG)
+        }
         let instance2 = try await waitForInstance(runtime, device, pid: pid2)
         try await adb.waitForBoot(instance2.serial, timeout: 300) { Shell.isAlive(pid2) }
         log("quick boot to sys.boot_completed: \(elapsed(t0))")
@@ -204,11 +230,14 @@ struct IntegrationTests {
         let sdk = AndroidSDK(root: tmp.url.appendingPathComponent("sdk"))
         let catalog = try await SDKRepository().fetchCatalog()
         let arch = host.architecture
-        try await CommandLineToolsInstaller.install(try #require(catalog.latestStable(CommandLineToolsInstaller.packagePath, for: arch)),
-                                                    into: sdk, host: arch) { _ in }
+        try await CommandLineToolsInstaller.install(
+            #require(catalog.latestStable(CommandLineToolsInstaller.packagePath, for: arch)),
+            into: sdk,
+            host: arch
+        ) { _ in }
         let image = try #require(catalog.systemImages(for: arch, includePreviews: false).first { $0.systemImage!.tagIDs == ["default"] })
         let cli = AndroidCLI(sdk: sdk)
-        for pkg in [try #require(catalog.latestStable("emulator", for: arch)), try #require(catalog.latestStable("platform-tools", for: arch)), image] {
+        for pkg in try [#require(catalog.latestStable("emulator", for: arch)), #require(catalog.latestStable("platform-tools", for: arch)), image] {
             let t0 = Date()
             try await cli.install(pkg, host: arch) { _ in }
             log("Android CLI installed \(pkg.path) \(pkg.revision) (\((pkg.archive(for: arch)?.size ?? 0) / 1_048_576) MB) in \(elapsed(t0))")
@@ -217,15 +246,26 @@ struct IntegrationTests {
         let installed = try #require(sdk.installedSystemImages().first)
         let store = AVDStore(home: tmp.url.appendingPathComponent("avd"))
         let limits = ResourceLimits.compute(host: host, apiLevel: installed.apiLevel)
-        let device = try await store.create(DeviceSpec(displayName: "Fresh", image: installed, profileID: "medium_phone",
-                                                       resources: limits.clamp(.lightweight)),
-                                            limits: limits, using: AVDManager(sdk: sdk, java: java, avdHome: store.home))
+        let device = try await store.create(
+            DeviceSpec(
+                displayName: "Fresh",
+                image: installed,
+                profileID: "medium_phone",
+                resources: limits.clamp(.lightweight)
+            ),
+            limits: limits,
+            using: AVDManager(sdk: sdk, java: java, avdHome: store.home)
+        )
         let runtime = EmulatorRuntime(sdk: sdk, avdHome: store.home, logDirectory: tmp.url.appendingPathComponent("logs"))
         let adb = ADB(executable: sdk.adbBinary)
         try await adb.startServer()
         let t0 = Date()
         let pid = try runtime.start(device, options: StartOptions(headless: true))
-        defer { if Shell.isAlive(pid) { kill(pid, SIGKILL) }; var s: Int32 = 0; waitpid(pid, &s, WNOHANG) }
+        defer {
+            if Shell.isAlive(pid) {
+                kill(pid, SIGKILL)
+            }; var s: Int32 = 0; waitpid(pid, &s, WNOHANG)
+        }
         let instance = try await waitForInstance(runtime, device, pid: pid)
         try await adb.waitForBoot(instance.serial, timeout: 600) { Shell.isAlive(pid) }
         log("fresh SDK: first boot of \(installed.packagePath) in \(elapsed(t0))")
@@ -247,23 +287,31 @@ struct IntegrationTests {
         let sdk = AndroidSDK(root: tmp.url.appendingPathComponent("sdk"))
         let catalog = try await SDKRepository().fetchCatalog()
         let arch = host.architecture
-        try await CommandLineToolsInstaller.install(try #require(catalog.latestStable(CommandLineToolsInstaller.packagePath, for: arch)),
-                                                    into: sdk, host: arch) { _ in }
+        try await CommandLineToolsInstaller.install(
+            #require(catalog.latestStable(CommandLineToolsInstaller.packagePath, for: arch)),
+            into: sdk,
+            host: arch
+        ) { _ in }
         let cli = AndroidCLI(sdk: sdk)
         for path in ["emulator", "platform-tools"] {
-            try await cli.install(try #require(catalog.latestStable(path, for: arch)), host: arch) { _ in }
+            try await cli.install(#require(catalog.latestStable(path, for: arch)), host: arch) { _ in }
         }
         let destination = sdk.root.appendingPathComponent(image.relativeDirectory)
         try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try await Shell.check(URL(fileURLWithPath: "/bin/cp"), ["-cR", source.root.appendingPathComponent(image.relativeDirectory).path,
-                                                               destination.path])
-        return (sdk, try #require(sdk.installedSystemImages().first))
+        try await Shell.check(URL(fileURLWithPath: "/bin/cp"), [
+            "-cR",
+            source.root.appendingPathComponent(image.relativeDirectory).path,
+            destination.path,
+        ])
+        return try (sdk, #require(sdk.installedSystemImages().first))
     }
 
     func waitForInstance(_ runtime: EmulatorRuntime, _ device: VirtualDevice, pid: pid_t) async throws -> RunningInstance {
         let deadline = Date().addingTimeInterval(180)
         while Date() < deadline {
-            if let i = runtime.instance(for: device) { return i }
+            if let i = runtime.instance(for: device) {
+                return i
+            }
             guard Shell.isAlive(pid) else {
                 Issue.record("emulator exited early:\n\(LogFiles.tail(runtime.logFile(for: device), maxBytes: 4000))")
                 throw CancellationError()
@@ -286,6 +334,11 @@ struct IntegrationTests {
 final class PhaseLog: @unchecked Sendable {
     private let lock = NSLock()
     private var storage: [InstallPhase] = []
-    var values: [InstallPhase] { lock.withLock { storage } }
-    func append(_ p: InstallPhase) { lock.withLock { storage.append(p) } }
+    var values: [InstallPhase] {
+        lock.withLock { storage }
+    }
+
+    func append(_ p: InstallPhase) {
+        lock.withLock { storage.append(p) }
+    }
 }

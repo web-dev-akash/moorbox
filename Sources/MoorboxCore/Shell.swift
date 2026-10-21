@@ -5,9 +5,18 @@ public struct CommandResult: Sendable {
     public var output: Data
     public var errorOutput: Data
 
-    public var stdout: String { String(decoding: output, as: UTF8.self) }
-    public var stderr: String { String(decoding: errorOutput, as: UTF8.self) }
-    public var succeeded: Bool { exitCode == 0 }
+    public var stdout: String {
+        String(decoding: output, as: UTF8.self)
+    }
+
+    public var stderr: String {
+        String(decoding: errorOutput, as: UTF8.self)
+    }
+
+    public var succeeded: Bool {
+        exitCode == 0
+    }
+
     /// stdout and stderr together, for showing to the user.
     public var combined: String {
         [stdout, stderr].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -52,7 +61,9 @@ public enum Shell {
         let process = Process()
         process.executableURL = executable
         process.arguments = arguments
-        if let environment { process.environment = environment }
+        if let environment {
+            process.environment = environment
+        }
         let inPipe = input.map { _ in Pipe() }
         process.standardInput = inPipe ?? FileHandle.nullDevice
         let outPipe = Pipe(), errPipe = Pipe()
@@ -159,7 +170,9 @@ public enum Shell {
 private final class Buffer: @unchecked Sendable {
     private let lock = NSLock()
     private var storage = Data()
-    var data: Data { lock.withLock { storage } }
+    var data: Data {
+        lock.withLock { storage }
+    }
 
     func collect(from pipe: Pipe, group: DispatchGroup) {
         group.enter()
@@ -181,16 +194,27 @@ private final class ProcessControl: @unchecked Sendable {
     private let process: Process
     private var reason: Reason?
 
-    init(_ process: Process) { self.process = process }
-    var stopReason: Reason? { lock.withLock { reason } }
+    init(_ process: Process) {
+        self.process = process
+    }
+
+    var stopReason: Reason? {
+        lock.withLock { reason }
+    }
 
     func stop(_ why: Reason) {
         guard process.isRunning else { return }
-        lock.withLock { if reason == nil { reason = why } }
+        lock.withLock {
+            if reason == nil {
+                reason = why
+            }
+        }
         process.terminate()
         let pid = process.processIdentifier
         DispatchQueue.global().asyncAfter(deadline: .now() + 3) { [process] in
-            if process.isRunning { kill(pid, SIGKILL) }
+            if process.isRunning {
+                kill(pid, SIGKILL)
+            }
         }
     }
 }

@@ -14,7 +14,9 @@ public struct JavaRuntime: Hashable, Sendable {
     public var majorVersion: Int
     public var source: Source
 
-    public var javaBinary: URL { home.appendingPathComponent("bin/java") }
+    public var javaBinary: URL {
+        home.appendingPathComponent("bin/java")
+    }
 }
 
 public enum JavaLocator {
@@ -48,7 +50,9 @@ public enum JavaLocator {
     /// Candidate JDK homes in priority order. Only paths are listed; `find` validates them.
     static func candidates(environment: [String: String], managedRoot: URL) -> [(URL, JavaRuntime.Source)] {
         var result: [(URL, JavaRuntime.Source)] = []
-        if let home = environment["JAVA_HOME"], !home.isEmpty { result.append((URL(fileURLWithPath: home), .environment)) }
+        if let home = environment["JAVA_HOME"], !home.isEmpty {
+            result.append((URL(fileURLWithPath: home), .environment))
+        }
         let fm = FileManager.default
         let managed = ((try? fm.contentsOfDirectory(atPath: managedRoot.path)) ?? []).filter { !$0.hasPrefix(".") }
             .sorted { $0.localizedStandardCompare($1) == .orderedDescending }
@@ -61,7 +65,9 @@ public enum JavaLocator {
     /// The best usable JDK (17+), or nil. Also asks macOS's `java_home` registry.
     public static func find(managedRoot: URL, environment: [String: String] = ProcessInfo.processInfo.environment) async -> JavaRuntime? {
         for (home, source) in candidates(environment: environment, managedRoot: managedRoot) {
-            if let jdk = inspect(home: home, source: source), jdk.majorVersion >= minimumMajorVersion { return jdk }
+            if let jdk = inspect(home: home, source: source), jdk.majorVersion >= minimumMajorVersion {
+                return jdk
+            }
         }
         let javaHome = URL(fileURLWithPath: "/usr/libexec/java_home")
         guard let r = try? await Shell.run(javaHome, ["-v", "\(minimumMajorVersion)+"], timeout: 10), r.succeeded else { return nil }
@@ -86,14 +92,20 @@ public struct JDKRelease: Hashable, Sendable {
 public enum Adoptium {
     public static let featureVersion = 21 // current LTS
     public static let licenseName = "GNU General Public License, version 2, with the Classpath Exception"
-    public static let licenseURL = URL(string: "https://openjdk.org/legal/gplv2+ce.html")!
-    public static let projectURL = URL(string: "https://adoptium.net/temurin/")!
+    public static let licenseURL = URL(constant: "https://openjdk.org/legal/gplv2+ce.html")
+    public static let projectURL = URL(constant: "https://adoptium.net/temurin/")
     /// Release binaries are served from Adoptium's GitHub releases.
     public static let trustedHosts: Set<String> = ["github.com"]
 
-    public static func latestURL(for arch: CPUArchitecture, feature: Int = featureVersion) -> URL {
-        let a = arch == .arm64 ? "aarch64" : "x64"
-        return URL(string: "https://api.adoptium.net/v3/assets/latest/\(feature)/hotspot?architecture=\(a)&image_type=jdk&os=mac&vendor=eclipse")!
+    public static func latestURL(for arch: CPUArchitecture, feature: Int = featureVersion) -> URL? {
+        var components = URLComponents(string: "https://api.adoptium.net/v3/assets/latest/\(feature)/hotspot")
+        components?.queryItems = [
+            URLQueryItem(name: "architecture", value: arch == .arm64 ? "aarch64" : "x64"),
+            URLQueryItem(name: "image_type", value: "jdk"),
+            URLQueryItem(name: "os", value: "mac"),
+            URLQueryItem(name: "vendor", value: "eclipse"),
+        ]
+        return components?.url
     }
 
     /// Picks the `.tar.gz` JDK package from an `assets/latest` response.
@@ -102,15 +114,18 @@ public enum Adoptium {
             struct Binary: Decodable {
                 struct Package: Decodable { let name: String; let link: URL; let checksum: String; let size: Int64 }
                 let package: Package
-                let image_type: String
+                let imageType: String
             }
+
             struct Version: Decodable { let semver: String }
             let binary: Binary
-            let release_name: String
+            let releaseName: String
             let version: Version
         }
-        let assets = try JSONDecoder().decode([Asset].self, from: data)
-        guard let asset = assets.first(where: { $0.binary.image_type == "jdk" && $0.binary.package.name.hasSuffix(".tar.gz") }) else {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let assets = try decoder.decode([Asset].self, from: data)
+        guard let asset = assets.first(where: { $0.binary.imageType == "jdk" && $0.binary.package.name.hasSuffix(".tar.gz") }) else {
             throw RepositoryError.malformed("no JDK archive in the Adoptium response")
         }
         let p = asset.binary.package
@@ -118,12 +133,19 @@ public enum Adoptium {
               p.link.path.hasPrefix("/adoptium/") else {
             throw RepositoryError.malformed("unexpected JDK download location \(p.link.absoluteString)")
         }
-        return JDKRelease(releaseName: asset.release_name, version: asset.version.semver, archiveName: p.name,
-                          url: p.link, sha256: p.checksum.lowercased(), size: p.size)
+        return JDKRelease(
+            releaseName: asset.releaseName,
+            version: asset.version.semver,
+            archiveName: p.name,
+            url: p.link,
+            sha256: p.checksum.lowercased(),
+            size: p.size
+        )
     }
 
     public static func fetchLatest(for arch: CPUArchitecture, session: URLSession = .shared) async throws -> JDKRelease {
-        let (data, response) = try await session.data(from: latestURL(for: arch))
+        guard let url = latestURL(for: arch) else { throw RepositoryError.malformed("invalid Adoptium API URL") }
+        let (data, response) = try await session.data(from: url)
         if let http = response as? HTTPURLResponse, http.statusCode != 200 {
             throw RepositoryError.malformed("Adoptium API returned HTTP \(http.statusCode)")
         }
@@ -132,14 +154,26 @@ public enum Adoptium {
 
     /// Downloads, verifies (SHA-256) and installs the JDK under `managedRoot/<release>`.
     /// No administrator rights are needed and nothing outside that folder is touched.
-    public static func install(_ release: JDKRelease, managedRoot: URL,
-                               progress: @escaping @Sendable (InstallPhase) -> Void) async throws -> JavaRuntime {
+    public static func install(
+        _ release: JDKRelease,
+        managedRoot: URL,
+        progress: @escaping @Sendable (InstallPhase) -> Void
+    ) async throws -> JavaRuntime {
         let safeName = release.releaseName.replacingOccurrences(of: "/", with: "_")
         let destination = managedRoot.appendingPathComponent(safeName)
-        let spec = ArchiveSpec(url: release.url, size: release.size, checksum: .sha256(release.sha256), format: .tarGz,
-                               trustedHosts: trustedHosts)
-        try await ArchiveInstaller.install(spec, to: destination, stagingRoot: managedRoot.appendingPathComponent(".staging"),
-                                           progress: progress)
+        let spec = ArchiveSpec(
+            url: release.url,
+            size: release.size,
+            checksum: .sha256(release.sha256),
+            format: .tarGz,
+            trustedHosts: trustedHosts
+        )
+        try await ArchiveInstaller.install(
+            spec,
+            to: destination,
+            stagingRoot: managedRoot.appendingPathComponent(".staging"),
+            progress: progress
+        )
         guard let jdk = JavaLocator.inspect(home: destination.appendingPathComponent("Contents/Home"), source: .moorbox) else {
             throw InstallError.unexpectedLayout("the downloaded JDK has no Contents/Home/bin/java")
         }

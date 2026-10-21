@@ -5,7 +5,6 @@ struct DevicesView: View {
     @Environment(AppModel.self) private var model
     @State private var pendingDelete: VirtualDevice?
     @State private var renaming: VirtualDevice?
-    @State private var newName = ""
 
     var body: some View {
         @Bindable var model = model
@@ -23,18 +22,19 @@ struct DevicesView: View {
                     Label("No virtual devices", systemImage: "iphone.gen3.slash")
                 } description: {
                     Text(model.installedImages.isEmpty
-                         ? "Install an Android version first, then create a device."
-                         : "Create a device to run Android.")
+                        ? "Install an Android version first, then create a device."
+                        : "Create a device to run Android.")
                 } actions: {
                     Button("New Device…") { model.showCreate = true }
                         .buttonStyle(.borderedProminent)
-                        .disabled(model.installedImages.isEmpty)
                 }
             } else {
                 HStack(spacing: 0) {
                     List(model.devices, selection: $model.selectedDeviceID) { device in
                         DeviceRow(device: device)
                             .tag(device.id)
+                            .accessibilityElement(children: .contain)
+                            .accessibilityIdentifier("device.\(device.id)")
                             .contextMenu { menu(for: device) }
                     }
                     .frame(width: 330)
@@ -43,34 +43,47 @@ struct DevicesView: View {
                         if let device = model.selectedDevice {
                             DeviceInspector(device: device)
                         } else {
-                            ContentUnavailableView("Select a device", systemImage: "sidebar.right",
-                                                   description: Text("Its status, controls and hardware settings appear here."))
+                            ContentUnavailableView(
+                                "Select a device",
+                                systemImage: "sidebar.right",
+                                description: Text("Its status, controls and hardware settings appear here.")
+                            )
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .onAppear { if model.selectedDeviceID == nil { model.selectedDeviceID = model.devices.first?.id } }
+                .onAppear {
+                    if model.selectedDeviceID == nil {
+                        model.selectedDeviceID = model.devices.first?.id
+                    }
+                }
             }
         }
         .navigationTitle("Devices")
         .toolbar {
+            // Always available: the sheet explains anything that's missing.
             Button { model.showCreate = true } label: { Label("New Device", systemImage: "plus") }
-                .disabled(model.installedImages.isEmpty || !model.isRuntimeReady)
                 .help("Create a virtual device")
         }
         .confirmationDialog("Delete “\(pendingDelete?.displayName ?? "")”?", isPresented: Binding(
-            get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }
+            get: { pendingDelete != nil }, set: {
+                if !$0 {
+                    pendingDelete = nil
+                }
+            }
         ), presenting: pendingDelete) { device in
             Button("Move to Trash", role: .destructive) { model.delete(device) }
         } message: { device in
+            let size = AVDStore.diskUsage(of: device.directory).bytes
             Text(device.hasUserData
-                 ? "This device has data: installed apps, files and settings (\(AVDStore.diskUsage(of: device.directory).bytes)). It will be moved to the Trash, where you can still recover it."
-                 : "The device will be moved to the Trash.")
+                ? """
+                This device has data: installed apps, files and settings (\(size)). It will be moved to the \
+                Trash, where you can still recover it.
+                """
+                : "The device will be moved to the Trash.")
         }
-        .alert("Rename Device", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
-            TextField("Name", text: $newName)
-            Button("Rename") { if let d = renaming { model.rename(d, to: newName) } }
-            Button("Cancel", role: .cancel) {}
+        .sheet(item: $renaming) { device in
+            RenameSheet(device: device) { model.rename(device, to: $0) }
         }
     }
 
@@ -88,12 +101,47 @@ struct DevicesView: View {
             Button("Cold Boot") { model.start(device, coldBoot: true) }
         }
         Divider()
-        Button("Rename…") { newName = device.displayName; renaming = device }
+        Button("Rename…") { renaming = device }
         Button("Reset Quick Boot") { model.resetQuickBoot(device) }
             .disabled(state.isActive || !device.hasQuickBootSnapshot)
         Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([device.directory]) }
         Divider()
         Button("Delete…", role: .destructive) { pendingDelete = device }.disabled(state.isActive)
+    }
+}
+
+struct RenameSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let device: VirtualDevice
+    let rename: (String) -> Void
+    @State private var name = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Rename Device").font(.headline)
+            TextField("Name", text: $name)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(commit)
+                .accessibilityIdentifier("rename.name")
+            Text("Only the display name changes; the device’s files and data stay where they are.")
+                .font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Rename", action: commit)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 380)
+        .onAppear { name = device.displayName }
+    }
+
+    func commit() {
+        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        rename(name)
+        dismiss()
     }
 }
 
@@ -131,9 +179,10 @@ struct DeviceRow: View {
                 .font(.title)
                 .foregroundStyle(state.serial != nil ? Color.accentColor : .secondary)
                 .frame(width: 32)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(device.displayName).font(.headline)
-                Text([device.androidVersionName, device.tagDisplay].compactMap { $0 }.joined(separator: " · "))
+                Text([device.androidVersionName, device.tagDisplay].compactMap(\.self).joined(separator: " · "))
                     .font(.subheadline).foregroundStyle(.secondary)
                 StateBadge(state: state)
             }
@@ -171,10 +220,14 @@ struct DeviceInspector: View {
                 if case let .failed(diagnosis) = state {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(diagnosis.summary).foregroundStyle(.red)
-                        if !diagnosis.remedy.isEmpty { Text(diagnosis.remedy).font(.callout) }
+                        if !diagnosis.remedy.isEmpty {
+                            Text(diagnosis.remedy).font(.callout)
+                        }
                     }
                 }
-                if let serial = state.serial { LabeledContent("adb serial", value: serial).textSelection(.enabled) }
+                if let serial = state.serial {
+                    LabeledContent("adb serial", value: serial).textSelection(.enabled)
+                }
                 LabeledContent("Quick boot", value: device.hasQuickBootSnapshot ? "Snapshot saved" : "Cold boot next")
             }
             Section("Controls") {
@@ -202,7 +255,9 @@ struct DeviceInspector: View {
                 }
                 Button("Apply") { model.updateResources(device, ramMB: ram, cores: cores, gpu: gpu) }
                     .disabled(state.isActive || (ram == device.ramMB && cores == device.cores && gpu.rawValue == device.config["hw.gpu.mode"]))
-                if state.isActive { Text("Stop the device to change its hardware.").font(.caption).foregroundStyle(.secondary) }
+                if state.isActive {
+                    Text("Stop the device to change its hardware.").font(.caption).foregroundStyle(.secondary)
+                }
             }
         }
         .formStyle(.grouped)

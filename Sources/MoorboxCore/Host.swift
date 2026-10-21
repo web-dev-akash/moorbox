@@ -1,12 +1,18 @@
 import Foundation
 
 public enum CPUArchitecture: String, Sendable {
-    case arm64, x86_64
+    // swiftlint:disable:next identifier_name
+    case arm64, x86_64 // matches the platform's own spelling (uname, Mach-O, Android ABIs)
 
     /// The Android ABI that runs natively (hardware-accelerated) on this host.
-    public var nativeAndroidABI: String { self == .arm64 ? "arm64-v8a" : "x86_64" }
+    public var nativeAndroidABI: String {
+        self == .arm64 ? "arm64-v8a" : "x86_64"
+    }
+
     /// `host-arch` value used in the SDK repository metadata.
-    public var repositoryName: String { self == .arm64 ? "aarch64" : "x64" }
+    public var repositoryName: String {
+        self == .arm64 ? "aarch64" : "x64"
+    }
 }
 
 public struct HostInfo: Sendable {
@@ -19,8 +25,14 @@ public struct HostInfo: Sendable {
     /// `kern.hv_support`: whether Hypervisor.framework acceleration is available.
     public var hypervisorSupported: Bool
 
-    public init(macOSVersion: String, architecture: CPUArchitecture, isTranslated: Bool = false,
-                physicalMemory: UInt64, cpuCount: Int, hypervisorSupported: Bool) {
+    public init(
+        macOSVersion: String,
+        architecture: CPUArchitecture,
+        isTranslated: Bool = false,
+        physicalMemory: UInt64,
+        cpuCount: Int,
+        hypervisorSupported: Bool
+    ) {
         self.macOSVersion = macOSVersion
         self.architecture = architecture
         self.isTranslated = isTranslated
@@ -44,7 +56,9 @@ public struct HostInfo: Sendable {
         )
     }
 
-    public var physicalMemoryMB: Int { Int(physicalMemory / 1_048_576) }
+    public var physicalMemoryMB: Int {
+        Int(physicalMemory / 1_048_576)
+    }
 
     /// Bytes available for new files on the volume containing `url` (or its nearest existing parent).
     public static func availableDiskSpace(at url: URL) -> Int64? {
@@ -75,7 +89,7 @@ func machOArchitectures(header: Data) -> Set<CPUArchitecture> {
     let bytes = [UInt8](header)
     func u32(_ at: Int, bigEndian: Bool) -> UInt32? {
         guard at + 4 <= bytes.count else { return nil }
-        let slice = bytes[at..<at + 4]
+        let slice = bytes[at ..< at + 4]
         return bigEndian ? slice.reduce(0) { $0 << 8 | UInt32($1) } : slice.reversed().reduce(0) { $0 << 8 | UInt32($1) }
     }
     func arch(_ cpuType: UInt32) -> CPUArchitecture? {
@@ -88,11 +102,11 @@ func machOArchitectures(header: Data) -> Set<CPUArchitecture> {
     guard let magicBE = u32(0, bigEndian: true) else { return [] }
     switch magicBE {
     case 0xCFFA_EDFE: // MH_MAGIC_64, little-endian on disk
-        return Set([u32(4, bigEndian: false).flatMap(arch)].compactMap { $0 })
+        return Set([u32(4, bigEndian: false).flatMap(arch)].compactMap(\.self))
     case 0xCAFE_BABE, 0xCAFE_BABF: // FAT_MAGIC / FAT_MAGIC_64 (big-endian)
         let stride = magicBE == 0xCAFE_BABE ? 20 : 32
         let count = Int(u32(4, bigEndian: true) ?? 0)
-        return Set((0..<min(count, 16)).compactMap { u32(8 + $0 * stride, bigEndian: true).flatMap(arch) })
+        return Set((0 ..< min(count, 16)).compactMap { u32(8 + $0 * stride, bigEndian: true).flatMap(arch) })
     default:
         return []
     }
@@ -117,11 +131,20 @@ public enum Properties {
     }
 
     public static func serialize(_ values: [String: String]) -> String {
-        values.keys.sorted().map { "\($0)=\(values[$0]!)\n" }.joined()
+        values.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)\n" }.joined()
     }
 
     /// Writes via a temporary file and atomic rename so a crash never leaves a half-written config.
     public static func write(_ values: [String: String], to url: URL) throws {
         try serialize(values).write(to: url, atomically: true, encoding: .utf8)
+    }
+}
+
+public extension URL {
+    /// A URL from a compile-time constant. Constants are covered by unit tests, so a typo is a
+    /// programmer error, not a runtime condition.
+    init(constant: StaticString) {
+        guard let url = URL(string: "\(constant)") else { preconditionFailure("invalid URL constant \(constant)") }
+        self = url
     }
 }

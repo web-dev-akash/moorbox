@@ -1,0 +1,46 @@
+# SwiftLint configuration (https://github.com/realm/SwiftLint)
+included:
+  - App
+  - Sources
+  - Tests
+  - UITests
+excluded:
+  - .build
+  - Tests/MoorboxCoreTests/Fixtures
+line_length:
+  warning: 160
+  error: 200
+  ignores_urls: true
+  ignores_comments: true
+file_length:
+  warning: 600
+type_body_length:
+  warning: 400
+function_body_length:
+  warning: 80
+cyclomatic_complexity:
+  warning: 15
+identifier_name:
+  min_length: 1
+  excluded: [id, ok, s, p, a, b, f, r, x, y, i, j, n]
+large_tuple:
+  warning: 5
+nesting:
+  type_level: 3
+opt_in_rules:
+  - empty_count
+  - first_where
+  - contains_over_first_not_nil
+  - redundant_nil_coalescing
+  - sorted_first_last
+  - force_unwrapping
+trailing_comma:
+  mandatory_comma: true
+analyzer_rules:
+  - unused_declaration
+  - unused_import
+disabled_rules:
+  - todo
+  # Tool output is decoded leniently on purpose (String(decoding:as:)); invalid UTF-8 from
+  # adb/emulator output must not turn into a missing result.
+  - optional_data_string_conversion

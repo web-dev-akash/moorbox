@@ -25,7 +25,9 @@ struct VersionsView: View {
                         }
                         Spacer()
                         let users = model.devices.filter { $0.systemImageDirectory == img.relativeDirectory }.count
-                        if users > 0 { Text("\(users) device\(users == 1 ? "" : "s")").foregroundStyle(.secondary) }
+                        if users > 0 {
+                            Text("\(users) device\(users == 1 ? "" : "s")").foregroundStyle(.secondary)
+                        }
                         Button("Remove…") { removing = img }
                     }
                 }
@@ -39,18 +41,23 @@ struct VersionsView: View {
                 Section { ProgressView("Loading available versions from Google’s SDK repository…") }
             } else {
                 Section {
-                    ForEach(available.filter { !$0.systemImage!.isPreview }) { p in
+                    ForEach(available.filter { $0.systemImage?.isPreview == false }) { p in
                         PackageRow(package: p, isRecommended: p == recommended) { confirm = p }
                     }
                 } header: {
                     Text("Available for this Mac (\(arch.nativeAndroidABI))")
                 } footer: {
-                    Text("Only images that run natively on \(arch == .arm64 ? "Apple Silicon" : "Intel") are listed. “16 KB page size” images are for testing apps against 16 KB memory pages. Play Store images include proprietary Google apps under Google’s license.")
-                        .font(.caption)
+                    let chip = arch == .arm64 ? "Apple Silicon" : "Intel"
+                    Text("""
+                    Only images that run natively on \(chip) are listed. “16 KB page size” images are for \
+                    testing apps against 16 KB memory pages. Play Store images include proprietary Google apps \
+                    under Google’s license.
+                    """)
+                    .font(.caption)
                 }
                 if model.showPreviews {
                     Section("Previews and betas") {
-                        ForEach(available.filter { $0.systemImage!.isPreview }) { p in
+                        ForEach(available.filter { $0.systemImage?.isPreview == true }) { p in
                             PackageRow(package: p, isRecommended: false) { confirm = p }
                         }
                     }
@@ -66,13 +73,18 @@ struct VersionsView: View {
         .onAppear { model.loadCatalog() }
         .sheet(item: $confirm) { InstallSheet(package: $0).environment(model) }
         .confirmationDialog("Remove \(removing?.displayName ?? "")?", isPresented: Binding(
-            get: { removing != nil }, set: { if !$0 { removing = nil } }), presenting: removing) { img in
+            get: { removing != nil }, set: {
+                if !$0 {
+                    removing = nil
+                }
+            }
+        ), presenting: removing) { img in
             Button("Move to Trash", role: .destructive) { model.removeImage(img) }
         } message: { img in
             let users = model.devices.filter { $0.systemImageDirectory == img.relativeDirectory }
             Text(users.isEmpty
-                 ? "The image will be moved to the Trash. You can download it again at any time."
-                 : "\(users.map(\.displayName).joined(separator: ", ")) use this image and won’t start until it’s reinstalled. Their data is not affected.")
+                ? "The image will be moved to the Trash. You can download it again at any time."
+                : "\(users.map(\.displayName).joined(separator: ", ")) use this image and won’t start until it’s reinstalled. Their data is not affected.")
         }
     }
 }
@@ -84,7 +96,12 @@ struct PackageRow: View {
     let install: () -> Void
 
     var body: some View {
-        let img = package.systemImage!
+        if let img = package.systemImage {
+            row(img)
+        }
+    }
+
+    func row(_ img: SystemImageDetails) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
@@ -172,9 +189,15 @@ struct InstallSheet: View {
                 }
             }
             if isTools {
-                Label("These are Google’s official SDK tools: the Android CLI (package installs) and avdmanager (device creation). On first use, Google’s launcher downloads the full Android CLI (about 90 MB) to ~/.android/bin.",
-                      systemImage: "info.circle")
-                    .font(.callout)
+                Label(
+                    """
+                    These are Google’s official SDK tools: the Android CLI (package installs) and avdmanager (device \
+                    creation). On first use, Google’s launcher downloads the full Android CLI (about 90 MB) to \
+                    ~/.android/bin.
+                    """,
+                    systemImage: "info.circle"
+                )
+                .font(.callout)
             }
             if replacing {
                 Label("The installed version will be replaced after the new one is downloaded and verified.", systemImage: "arrow.triangle.2.circlepath")

@@ -1,6 +1,6 @@
 import AppKit
-import MoorboxCore
 import Foundation
+import MoorboxCore
 import Observation
 import OSLog
 
@@ -28,13 +28,15 @@ final class AppModel {
     static let logDirectory = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("Logs/Moorbox")
 
-    // Settings
+    /// Settings
     var sdkPathOverride: String? = UserDefaults.standard.string(forKey: "sdkPath") {
         didSet { UserDefaults.standard.set(sdkPathOverride, forKey: "sdkPath"); refresh() }
     }
+
     var showPreviews = UserDefaults.standard.bool(forKey: "showPreviews") {
         didSet { UserDefaults.standard.set(showPreviews, forKey: "showPreviews") }
     }
+
     var setupCompleted = UserDefaults.standard.bool(forKey: "setupCompleted") {
         didSet { UserDefaults.standard.set(setupCompleted, forKey: "setupCompleted") }
     }
@@ -85,7 +87,9 @@ final class AppModel {
         refresh()
         locateJava()
         watchDiscoveryDirectory()
-        if !setupCompleted || sdk == nil { showSetup = true }
+        if !setupCompleted || sdk == nil {
+            showSetup = true
+        }
         NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.refresh() }
         }
@@ -97,28 +101,39 @@ final class AppModel {
         sdk.map { EmulatorRuntime(sdk: $0, avdHome: avdStore.home, logDirectory: Self.logDirectory) }
     }
 
-    var adb: ADB? { sdk.map { ADB(executable: $0.adbBinary) } }
+    var adb: ADB? {
+        sdk.map { ADB(executable: $0.adbBinary) }
+    }
 
     var effectiveSDKLocation: URL {
         sdk?.root ?? sdkPathOverride.map { URL(fileURLWithPath: $0) } ?? AndroidSDK.defaultLocation()
     }
 
-    var isRuntimeReady: Bool { sdkHealth?.isReady == true }
+    var isRuntimeReady: Bool {
+        sdkHealth?.isReady == true
+    }
 
     func state(of device: VirtualDevice) -> DeviceState {
-        DeviceState.resolve(instance: runtime?.instance(for: device, in: instances),
-                            bootCompleted: booted.contains(device.id),
-                            pending: pending[device.id], lastFailure: failures[device.id])
+        DeviceState.resolve(
+            instance: runtime?.instance(for: device, in: instances),
+            bootCompleted: booted.contains(device.id),
+            pending: pending[device.id],
+            lastFailure: failures[device.id]
+        )
     }
 
     var runningDevices: [(device: VirtualDevice, serial: String)] {
         devices.compactMap { d in
-            if case let .running(serial) = state(of: d) { return (d, serial) }
+            if case let .running(serial) = state(of: d) {
+                return (d, serial)
+            }
             return nil
         }
     }
 
-    var selectedDevice: VirtualDevice? { devices.first { $0.id == selectedDeviceID } }
+    var selectedDevice: VirtualDevice? {
+        devices.first { $0.id == selectedDeviceID }
+    }
 
     // MARK: Refresh
 
@@ -142,8 +157,12 @@ final class AppModel {
                 booted.remove(device.id)
                 continue
             }
-            if pending[device.id] == .starting { pending[device.id] = nil }
-            if !booted.contains(device.id), bootTasks[device.id] == nil { waitForBoot(device, instance) }
+            if pending[device.id] == .starting {
+                pending[device.id] = nil
+            }
+            if !booted.contains(device.id), bootTasks[device.id] == nil {
+                waitForBoot(device, instance)
+            }
         }
     }
 
@@ -166,7 +185,7 @@ final class AppModel {
         source.setEventHandler { [weak self] in
             var status: Int32 = 0
             // Reap our own child; for an emulator started elsewhere this returns -1 (ECHILD).
-            let exitCode: Int32? = waitpid(pid, &status, WNOHANG) == pid ? (status & 0x7f == 0 ? (status >> 8) & 0xff : 128 + (status & 0x7f)) : nil
+            let exitCode: Int32? = waitpid(pid, &status, WNOHANG) == pid ? (status & 0x7F == 0 ? (status >> 8) & 0xFF : 128 + (status & 0x7F)) : nil
             MainActor.assumeIsolated { self?.processExited(pid, deviceID: deviceID, exitCode: exitCode) }
         }
         source.resume()
@@ -175,7 +194,7 @@ final class AppModel {
         if !Shell.isAlive(pid) {
             source.cancel()
             var status: Int32 = 0
-            let code: Int32? = waitpid(pid, &status, WNOHANG) == pid ? (status >> 8) & 0xff : nil
+            let code: Int32? = waitpid(pid, &status, WNOHANG) == pid ? (status >> 8) & 0xFF : nil
             processExited(pid, deviceID: deviceID, exitCode: code)
         }
     }
@@ -186,7 +205,9 @@ final class AppModel {
         let wasBooted = booted.contains(deviceID)
         let requested = pending[deviceID] == .stopping
         pending[deviceID] = nil
-        if spawned[deviceID] == pid { spawned[deviceID] = nil }
+        if spawned[deviceID] == pid {
+            spawned[deviceID] = nil
+        }
         booted.remove(deviceID)
         refreshInstances()
         guard !requested, let device = devices.first(where: { $0.id == deviceID }) else {
@@ -199,6 +220,7 @@ final class AppModel {
         // Closing the emulator window is a normal exit (code 0).
         if (exitCode ?? 0) != 0 || (!wasBooted && specific) {
             failures[deviceID] = diagnosis
+            selectedDeviceID = deviceID
             log(.error, "\(device.displayName): \(diagnosis.summary)")
         } else {
             log(.info, "\(device.displayName) stopped.")
@@ -213,8 +235,8 @@ final class AppModel {
             do {
                 try await adb.waitForBoot(instance.serial, timeout: 600) { Shell.isAlive(pid) }
                 guard let self else { return }
-                self.booted.insert(device.id)
-                self.log(.info, "\(device.displayName) finished booting (\(instance.serial)).")
+                booted.insert(device.id)
+                log(.info, "\(device.displayName) finished booting (\(instance.serial)).")
             } catch is CancellationError {
             } catch {
                 self?.log(.warning, "\(device.displayName): \(error.localizedDescription)")
@@ -232,9 +254,11 @@ final class AppModel {
             log(.error, "Could not start adb: \(error.localizedDescription)")
         }
     }
+}
 
-    // MARK: Device lifecycle
+// MARK: - Device lifecycle
 
+extension AppModel {
     func start(_ device: VirtualDevice, coldBoot: Bool = false) {
         guard let runtime else { alertMessage = "Set up the Android Emulator first."; return }
         failures[device.id] = nil
@@ -246,6 +270,7 @@ final class AppModel {
             log(.info, "Starting \(device.displayName)\(coldBoot ? " (cold boot)" : "") — pid \(pid).")
         } catch {
             failures[device.id] = Diagnosis(summary: error.localizedDescription, remedy: "")
+            selectedDeviceID = device.id // show the reason right away
             log(.error, "\(device.displayName): \(error.localizedDescription)")
         }
     }
@@ -268,8 +293,8 @@ final class AppModel {
 
     func restart(_ device: VirtualDevice) {
         stop(device) { [weak self] in
-            guard let self, let fresh = self.devices.first(where: { $0.id == device.id }) else { return }
-            self.start(fresh)
+            guard let self, let fresh = devices.first(where: { $0.id == device.id }) else { return }
+            start(fresh)
         }
     }
 
@@ -280,7 +305,9 @@ final class AppModel {
               EmulatorRuntime.isEmulatorProcess(pid) else { return }
         kill(pid, SIGTERM)
         DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
-            if EmulatorRuntime.isEmulatorProcess(pid) { kill(pid, SIGKILL) }
+            if EmulatorRuntime.isEmulatorProcess(pid) {
+                kill(pid, SIGKILL)
+            }
         }
         log(.warning, "Cancelled starting \(device.displayName).")
     }
@@ -321,14 +348,18 @@ final class AppModel {
             isLoadingProfiles = false
         }
     }
+}
 
-    // MARK: Java (needed by avdmanager)
+// MARK: - Java
 
+extension AppModel {
     func locateJava() {
         Task {
             java = await JavaLocator.find(managedRoot: JavaLocator.managedRoot(applicationSupport: Self.supportDirectory))
             javaChecked = true
-            if let java { logger.info("Using JDK \(java.version, privacy: .public) from \(java.source.rawValue, privacy: .public)") }
+            if let java {
+                logger.info("Using JDK \(java.version, privacy: .public) from \(java.source.rawValue, privacy: .public)")
+            }
         }
     }
 
@@ -372,7 +403,9 @@ final class AppModel {
         do {
             try avdStore.moveToTrash(device)
             log(.info, "Moved \(device.displayName) to the Trash.")
-            if selectedDeviceID == device.id { selectedDeviceID = nil }
+            if selectedDeviceID == device.id {
+                selectedDeviceID = nil
+            }
         } catch {
             alertMessage = "Could not delete \(device.displayName): \(error.localizedDescription)"
         }
@@ -398,46 +431,11 @@ final class AppModel {
         do { try body() } catch { alertMessage = error.localizedDescription }
         refresh()
     }
+}
 
-    // MARK: Device controls
+// MARK: - Catalog & installs
 
-    func rotate(_ device: VirtualDevice) {
-        deviceCommand(device, "Rotate") { adb, serial in try await adb.emulatorConsole(["rotate"], serial: serial) }
-    }
-
-    func press(_ key: ADB.Key, on device: VirtualDevice) {
-        deviceCommand(device, "Key press") { adb, serial in try await adb.press(key, serial: serial) }
-    }
-
-    /// Saves a PNG to the Desktop, like macOS screenshots, and reveals it.
-    func screenshot(_ device: VirtualDevice) {
-        deviceCommand(device, "Screenshot") { [weak self] adb, serial in
-            let png = try await adb.screenshotPNG(serial: serial)
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
-            let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]
-            let url = desktop.appendingPathComponent("\(device.displayName) \(formatter.string(from: Date())).png")
-            try png.write(to: url, options: .atomic)
-            await MainActor.run {
-                NSWorkspace.shared.activateFileViewerSelecting([url])
-                self?.log(.info, "Saved screenshot to \(url.path).")
-            }
-        }
-    }
-
-    private func deviceCommand(_ device: VirtualDevice, _ name: String,
-                               _ body: @escaping @Sendable (ADB, String) async throws -> Void) {
-        guard let adb, let serial = state(of: device).serial else { alertMessage = "Start the device first."; return }
-        Task {
-            do { try await body(adb, serial) } catch {
-                alertMessage = "\(name) failed: \(error.localizedDescription)"
-                log(.error, "\(name) failed: \(error.localizedDescription)")
-            }
-        }
-    }
-
-    // MARK: Catalog & installs
-
+extension AppModel {
     func loadCatalog(force: Bool = false) {
         guard force || (catalog == nil && !isLoadingCatalog) else { return }
         isLoadingCatalog = true
@@ -448,7 +446,7 @@ final class AppModel {
                 log(.info, "Loaded \(catalog?.packages.count ?? 0) packages from the Android SDK repository.")
             } catch {
                 catalogError = "Couldn't load available Android versions: \(error.localizedDescription)"
-                log(.error, catalogError!)
+                log(.error, "Couldn't load available Android versions: \(error.localizedDescription)")
             }
             isLoadingCatalog = false
         }
@@ -468,7 +466,9 @@ final class AppModel {
         return "Requires Android Emulator \(needed) or newer (installed: \(have)). Update the emulator in Setup."
     }
 
-    var hasCommandLineTools: Bool { sdk?.commandLineToolsRevision != nil }
+    var hasCommandLineTools: Bool {
+        sdk?.commandLineToolsRevision != nil
+    }
 
     /// Installs into the current SDK, or creates one at `effectiveSDKLocation`. The caller
     /// must have shown the size, destination and license and obtained the user's consent:
@@ -478,7 +478,7 @@ final class AppModel {
     /// installed by Google's Android CLI.
     func install(_ package: RemotePackage, replacing: Bool = false) {
         guard installTasks[package.path] == nil else { return }
-        let sdk = self.sdk ?? AndroidSDK(root: effectiveSDKLocation)
+        let sdk = sdk ?? AndroidSDK(root: effectiveSDKLocation)
         if package.path == "emulator", !instances.isEmpty {
             alertMessage = "Stop all running devices before updating the emulator."
             return
@@ -505,7 +505,9 @@ final class AppModel {
                 }
                 installs[path] = nil
                 log(.info, "Installed \(package.displayName).")
-                if self.sdk == nil { sdkPathOverride = sdk.root.path }
+                if self.sdk == nil {
+                    sdkPathOverride = sdk.root.path
+                }
             } catch is CancellationError {
                 installs[path] = nil
                 log(.info, "Cancelled installing \(package.displayName).")
@@ -539,8 +541,13 @@ final class AppModel {
         }
     }
 
-    func cancelInstall(_ path: String) { installTasks[path]?.cancel() }
-    func dismissInstallError(_ path: String) { installs[path] = nil }
+    func cancelInstall(_ path: String) {
+        installTasks[path]?.cancel()
+    }
+
+    func dismissInstallError(_ path: String) {
+        installs[path] = nil
+    }
 
     // MARK: Events
 
@@ -551,6 +558,8 @@ final class AppModel {
         case .error: logger.error("\(message, privacy: .public)")
         }
         events.append(AppEvent(level: level, message: message))
-        if events.count > 500 { events.removeFirst(events.count - 500) }
+        if events.count > 500 {
+            events.removeFirst(events.count - 500)
+        }
     }
 }

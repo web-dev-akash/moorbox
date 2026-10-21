@@ -1,8 +1,8 @@
 import Foundation
-import Testing
 @testable import MoorboxCore
+import Testing
 
-@Suite struct ADBTests {
+struct ADBTests {
     @Test func parsesDevices() {
         let out = "List of devices attached\nemulator-5554\tdevice\nemulator-5556\toffline\n\n"
         let devices = ADB.parseDevices(out)
@@ -29,15 +29,21 @@ import Testing
     }
 
     @Test func installErrorsAreExplained() {
-        let err = ADB.installError(from: "Performing Streamed Install\nadb: failed to install app.apk: Failure [INSTALL_FAILED_NO_MATCHING_ABIS: Failed to extract native libraries, res=-113]")
+        let err = ADB
+            .installError(
+                from: "Performing Streamed Install\nadb: failed to install app.apk: Failure [INSTALL_FAILED_NO_MATCHING_ABIS: Failed to extract native libraries, res=-113]"
+            )
         guard case let .installFailed(code, explanation, _) = err else { Issue.record("wrong case \(err)"); return }
         #expect(code == "INSTALL_FAILED_NO_MATCHING_ABIS")
         #expect(explanation.contains("CPU architecture"))
         if case let .installFailed(code, explanation, _) = ADB.installError(from: "Failure [INSTALL_FAILED_SOMETHING_NEW]") {
             #expect(code == "INSTALL_FAILED_SOMETHING_NEW")
             #expect(explanation == "Android rejected the APK.")
-        } else { Issue.record("expected installFailed") }
-        #expect(ADB.installError(from: "adb: device offline") == .commandFailed("The device is not connected to adb. Wait for it to finish booting, or restart it."))
+        } else {
+            Issue.record("expected installFailed")
+        }
+        #expect(ADB
+            .installError(from: "adb: device offline") == .commandFailed("The device is not connected to adb. Wait for it to finish booting, or restart it."))
     }
 
     @Test func resolvesLauncherActivity() {
@@ -61,18 +67,18 @@ import Testing
     }
 }
 
-@Suite struct DiagnosticsTests {
+struct DiagnosticsTests {
     @Test func diagnosesRealEmulatorOutput() {
         // Captured from emulator 36.5.11 on macOS.
         let unknown = """
-            ERROR        | Unknown AVD name [Nope], use -list-avds to see valid list.
-            ERROR        | ANDROID_AVD_HOME is defined but there is no file Nope.ini in $ANDROID_AVD_HOME
-            """
+        ERROR        | Unknown AVD name [Nope], use -list-avds to see valid list.
+        ERROR        | ANDROID_AVD_HOME is defined but there is no file Nope.ini in $ANDROID_AVD_HOME
+        """
         #expect(EmulatorDiagnosis.diagnose(log: unknown, exitCode: 1).summary.contains("could not find this device"))
         let missing = """
-            WARNING      | emulator has searched the above paths but found no valid sdk root directory.
-            FATAL        | Cannot find AVD system path. Please define ANDROID_SDK_ROOT
-            """
+        WARNING      | emulator has searched the above paths but found no valid sdk root directory.
+        FATAL        | Cannot find AVD system path. Please define ANDROID_SDK_ROOT
+        """
         #expect(EmulatorDiagnosis.diagnose(log: missing, exitCode: 1).summary.contains("system image is missing"))
         // Informational lines mentioning "snapshot" must not trigger the snapshot rule.
         let normal = "INFO         | Loading snapshot 'default_boot'...\nWARNING      | Failed to load snapshot 'default_boot'"
@@ -81,11 +87,11 @@ import Testing
 
     @Test func redactsPersonalData() {
         let text = """
-            SDK: /Users/alice/Library/Android/sdk
-            grpc.token=abc123
-            contact alice@example.com
-            user alice ran it
-            """
+        SDK: /Users/alice/Library/Android/sdk
+        grpc.token=abc123
+        contact alice@example.com
+        user alice ran it
+        """
         let out = Redactor.redact(text, home: "/Users/alice", user: "alice")
         #expect(out.contains("SDK: ~/Library/Android/sdk"))
         #expect(out.contains("grpc.token=<redacted>"))
@@ -109,7 +115,7 @@ import Testing
     }
 }
 
-@Suite struct ShellTests {
+struct ShellTests {
     @Test func capturesOutputAndExitCode() async throws {
         let r = try await Shell.run(URL(fileURLWithPath: "/bin/sh"), ["-c", "echo out; echo err >&2; exit 3"])
         #expect(r.stdout == "out\n")
@@ -153,11 +159,17 @@ import Testing
     @Test func spawnDetachedWritesLogAndCanBeObserved() async throws {
         let tmp = try TempDir()
         let log = tmp.url.appendingPathComponent("out.log")
-        let pid = try Shell.spawnDetached(URL(fileURLWithPath: "/bin/sh"), ["-c", "echo \"$MOORBOX_TEST\"; echo e >&2"],
-                                          environment: ["MOORBOX_TEST": "hello"], logFile: log)
+        let pid = try Shell.spawnDetached(
+            URL(fileURLWithPath: "/bin/sh"),
+            ["-c", "echo \"$MOORBOX_TEST\"; echo e >&2"],
+            environment: ["MOORBOX_TEST": "hello"],
+            logFile: log
+        )
         // Exited but not yet reaped (a zombie) must count as not alive.
         let deadline = Date().addingTimeInterval(5)
-        while Shell.isAlive(pid), Date() < deadline { try await Task.sleep(for: .milliseconds(50)) }
+        while Shell.isAlive(pid), Date() < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+        }
         #expect(!Shell.isAlive(pid))
         #expect(kill(pid, 0) == 0) // still a zombie at this point
         var status: Int32 = 0
@@ -171,7 +183,7 @@ import Testing
     }
 }
 
-@Suite struct InstallerTests {
+struct InstallerTests {
     @Test func digests() throws {
         let tmp = try TempDir()
         try tmp.write("f", "abc")
@@ -227,7 +239,7 @@ import Testing
     }
 }
 
-@Suite struct JavaTests {
+struct JavaTests {
     @Test func parsesReleaseFiles() {
         #expect(JavaLocator.parseRelease("IMPLEMENTOR=\"JetBrains\"\nJAVA_VERSION=\"21.0.10\"\n")?.major == 21)
         #expect(JavaLocator.parseRelease("JAVA_VERSION=\"17.0.20\"")?.version == "17.0.20")
@@ -274,14 +286,20 @@ import Testing
         #expect(release.size > 100_000_000)
         #expect(release.releaseName.hasPrefix("jdk-21"))
         #expect(throws: (any Error).self) { try Adoptium.parse(Data("[]".utf8)) }
-        let evil = Data(#"[{"binary":{"image_type":"jdk","package":{"name":"x.tar.gz","link":"https://evil.example/x.tar.gz","checksum":"\#(String(repeating: "a", count: 64))","size":1}},"release_name":"jdk-21","version":{"semver":"21"}}]"#.utf8)
+        let fakeChecksum = String(repeating: "a", count: 64)
+        let evil = Data(#"""
+        [{"binary": {"image_type": "jdk",
+                     "package": {"name": "x.tar.gz", "link": "https://evil.example/x.tar.gz",
+                                 "checksum": "\#(fakeChecksum)", "size": 1}},
+          "release_name": "jdk-21", "version": {"semver": "21"}}]
+        """#.utf8)
         #expect(throws: RepositoryError.self) { try Adoptium.parse(evil) }
     }
 }
 
-@Suite struct GoogleToolTests {
+struct GoogleToolTests {
     @Test func parsesAVDManagerDeviceList() throws {
-        let profiles = AVDManager.parseDevices(String(decoding: try fixture("avdmanager-list-device.txt"), as: UTF8.self))
+        let profiles = try AVDManager.parseDevices(String(decoding: fixture("avdmanager-list-device.txt"), as: UTF8.self))
         #expect(profiles.count == 96)
         let medium = try #require(profiles.first { $0.id == "medium_phone" })
         #expect(medium.name == "Medium Phone")
@@ -317,7 +335,7 @@ import Testing
     }
 }
 
-@Suite struct ShellInputTests {
+struct ShellInputTests {
     @Test func feedsStandardInput() async throws {
         let r = try await Shell.run(URL(fileURLWithPath: "/bin/sh"), ["-c", "read answer; echo got:$answer"], input: Data("no\n".utf8))
         #expect(r.stdout == "got:no\n")

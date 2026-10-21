@@ -38,7 +38,9 @@ public enum Checksum: Sendable, Equatable {
     case sha256(String)
 
     var expected: String {
-        switch self { case let .sha1(v), let .sha256(v): v.lowercased() }
+        switch self {
+        case let .sha1(v), let .sha256(v): v.lowercased()
+        }
     }
 }
 
@@ -70,7 +72,9 @@ public struct ArchiveSpec: Sendable {
 /// kept until the new one is in place.
 public enum ArchiveInstaller {
     /// Download + extracted size, plus headroom.
-    public static func requiredSpace(for size: Int64) -> Int64 { size * 3 + 512 * 1_048_576 }
+    public static func requiredSpace(for size: Int64) -> Int64 {
+        size * 3 + 512 * 1_048_576
+    }
 
     public static func install(
         _ spec: ArchiveSpec, to destination: URL, stagingRoot: URL, replacing: Bool = false,
@@ -193,11 +197,20 @@ public enum CommandLineToolsInstaller {
     ) async throws {
         guard let archive = package.archive(for: host) else { throw InstallError.notAvailableForHost(package.displayName) }
         guard let relative = package.installDirectory else { throw InstallError.unsafeArchive("invalid package path \(package.path)") }
-        let spec = ArchiveSpec(url: archive.url, size: archive.size, checksum: .sha1(archive.sha1), format: .zip,
-                               trustedHosts: [SDKRepository.trustedHost])
-        try await ArchiveInstaller.install(spec, to: sdk.root.appendingPathComponent(relative),
-                                           stagingRoot: sdk.root.appendingPathComponent(".moorbox-staging"),
-                                           replacing: replacing, progress: progress)
+        let spec = ArchiveSpec(
+            url: archive.url,
+            size: archive.size,
+            checksum: .sha1(archive.sha1),
+            format: .zip,
+            trustedHosts: [SDKRepository.trustedHost]
+        )
+        try await ArchiveInstaller.install(
+            spec,
+            to: sdk.root.appendingPathComponent(relative),
+            stagingRoot: sdk.root.appendingPathComponent(".moorbox-staging"),
+            replacing: replacing,
+            progress: progress
+        )
     }
 }
 
@@ -219,20 +232,30 @@ final class Downloader: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     private var task: URLSessionDataTask?
     private var lastReport = Date.distantPast
 
-    func download(_ url: URL, to partial: URL, expectedSize: Int64,
-                  progress: @escaping @Sendable (Int64, Int64) -> Void) async throws {
+    func download(
+        _ url: URL,
+        to partial: URL,
+        expectedSize: Int64,
+        progress: @escaping @Sendable (Int64, Int64) -> Void
+    ) async throws {
         let fm = FileManager.default
         try fm.createDirectory(at: partial.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if !fm.fileExists(atPath: partial.path) { fm.createFile(atPath: partial.path, contents: nil) }
+        if !fm.fileExists(atPath: partial.path) {
+            fm.createFile(atPath: partial.path, contents: nil)
+        }
         let existing = ((try? fm.attributesOfItem(atPath: partial.path))?[.size] as? Int64) ?? 0
-        if existing == expectedSize, expectedSize > 0 { progress(existing, expectedSize); return }
+        if existing == expectedSize, expectedSize > 0 {
+            progress(existing, expectedSize); return
+        }
 
         var request = URLRequest(url: url)
         // Archives are already compressed. With gzip allowed, dl.google.com serves a gzip-encoded
         // variant whose byte ranges can't be decoded mid-stream (NSURLErrorCannotDecodeRawData),
         // so ask for the file as-is; ranges then match the bytes on disk.
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
-        if existing > 0, existing < expectedSize { request.setValue("bytes=\(existing)-", forHTTPHeaderField: "Range") }
+        if existing > 0, existing < expectedSize {
+            request.setValue("bytes=\(existing)-", forHTTPHeaderField: "Range")
+        }
         let offset = existing < expectedSize ? existing : 0
         let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
@@ -261,8 +284,12 @@ final class Downloader: NSObject, URLSessionDataDelegate, @unchecked Sendable {
         }
     }
 
-    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
-                    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         let ok: Bool = lock.withLock {
             guard let handle else { return false }
@@ -302,7 +329,9 @@ final class Downloader: NSObject, URLSessionDataDelegate, @unchecked Sendable {
             lastReport = Date()
             return (onProgress, received, expected)
         }
-        if let (callback, done, total) = report { callback(done, total) }
+        if let (callback, done, total) = report {
+            callback(done, total)
+        }
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
@@ -310,7 +339,9 @@ final class Downloader: NSObject, URLSessionDataDelegate, @unchecked Sendable {
             defer { continuation = nil }
             return (continuation, self.failure, received, expected, onProgress)
         }
-        if let failure { c?.resume(throwing: failure); return }
+        if let failure {
+            c?.resume(throwing: failure); return
+        }
         if let error {
             c?.resume(throwing: (error as? URLError)?.code == .cancelled ? CancellationError() : error)
             return

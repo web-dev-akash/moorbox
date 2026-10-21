@@ -20,7 +20,10 @@ struct DiagnosticsView: View {
             Section("Android SDK") {
                 LabeledContent("Location", value: model.sdk?.root.path ?? "Not found")
                 LabeledContent("Command-line tools", value: model.sdkHealth?.commandLineToolsRevision.map { "\($0)" } ?? "Not installed")
-                LabeledContent("Java (for avdmanager)", value: model.java.map { "\($0.version) — \($0.source.rawValue)" } ?? (model.javaChecked ? "Not found" : "Checking…"))
+                LabeledContent(
+                    "Java (for avdmanager)",
+                    value: model.java.map { "\($0.version) — \($0.source.rawValue)" } ?? (model.javaChecked ? "Not found" : "Checking…")
+                )
                 LabeledContent("Emulator", value: model.sdkHealth?.emulatorRevision.map { "\($0)" } ?? "Not installed")
                 LabeledContent("platform-tools", value: model.sdk?.platformToolsRevision.map { "\($0)" } ?? "Not installed")
                 LabeledContent("Devices folder", value: model.avdStore.home.path)
@@ -32,17 +35,28 @@ struct DiagnosticsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Label("Another adb (\(other.version)) is installed at \(other.path).", systemImage: "exclamationmark.triangle.fill")
                             .foregroundStyle(.orange)
-                        Text("If both are used, they restart each other’s adb server and devices disconnect. Moorbox always uses the SDK’s adb; keep tools you run yourself on the same version (for example, update platform-tools here, or remove the other copy with `brew uninstall --cask android-platform-tools`).")
-                            .font(.caption).textSelection(.enabled)
+                        Text(
+                            """
+                            If both are used, they restart each other’s adb server and devices disconnect. Moorbox always \
+                            uses the SDK’s adb; keep tools you run yourself on the same version (for example, update \
+                            platform-tools here, or remove the other copy with `brew uninstall --cask \
+                            android-platform-tools`).
+                            """
+                        )
+                        .font(.caption).textSelection(.enabled)
                     }
                 }
                 HStack {
                     Button("Check adb connection") { checkADB() }
-                    if let adbStatus { Text(adbStatus).font(.callout).textSelection(.enabled) }
+                    if let adbStatus {
+                        Text(adbStatus).font(.callout).textSelection(.enabled)
+                    }
                 }
             }
             Section("Devices") {
-                if model.devices.isEmpty { Text("No devices.").foregroundStyle(.secondary) }
+                if model.devices.isEmpty {
+                    Text("No devices.").foregroundStyle(.secondary)
+                }
                 ForEach(model.devices) { device in
                     let state = model.state(of: device)
                     VStack(alignment: .leading, spacing: 4) {
@@ -60,7 +74,9 @@ struct DiagnosticsView: View {
                 }
             }
             Section("Activity") {
-                if model.events.isEmpty { Text("Nothing yet.").foregroundStyle(.secondary) }
+                if model.events.isEmpty {
+                    Text("Nothing yet.").foregroundStyle(.secondary)
+                }
                 ForEach(model.events.suffix(100).reversed()) { e in
                     HStack(alignment: .firstTextBaseline) {
                         Text(e.date, style: .time).font(.caption).foregroundStyle(.secondary).monospacedDigit()
@@ -77,7 +93,11 @@ struct DiagnosticsView: View {
             Button { exportReport() } label: { Label("Export Report…", systemImage: "square.and.arrow.up") }
                 .help("Save a diagnostics report with personal paths and tokens redacted. Nothing is uploaded.")
         }
-        .task { if let adb = model.adb { adbConflicts = await adb.conflictingInstallations() } }
+        .task {
+            if let adb = model.adb {
+                adbConflicts = await adb.conflictingInstallations()
+            }
+        }
         .sheet(item: $logDevice) { device in
             let url = model.runtime?.logFile(for: device)
             LogSheet(title: "Emulator log — \(device.displayName)", text: url.map { LogFiles.tail($0) } ?? "")
@@ -117,17 +137,23 @@ extension AppModel {
     /// Plain-text report. The caller redacts it before saving.
     func diagnosticsReport() -> String {
         var lines = ["Moorbox diagnostics — \(Date())", ""]
-        lines += ["macOS \(host.macOSVersion), \(host.architecture.rawValue)\(host.isTranslated ? " (Rosetta)" : ""), \(host.physicalMemoryMB) MB RAM, \(host.cpuCount) cores, hypervisor: \(host.hypervisorSupported)"]
-        lines += ["SDK: \(sdk?.root.path ?? "not found")",
-                  "Command-line tools: \(sdkHealth?.commandLineToolsRevision.map { "\($0)" } ?? "none")",
-                  "Java: \(java.map { "\($0.version) (\($0.source.rawValue)) \($0.home.path)" } ?? "none")",
-                  "Emulator: \(sdkHealth?.emulatorRevision.map { "\($0)" } ?? "none") archs: \(sdkHealth?.emulatorArchitectures.map(\.rawValue).sorted() ?? [])",
-                  "Problems: \(sdkHealth?.problems ?? [])",
-                  "AVD home: \(avdStore.home.path)", ""]
+        let rosetta = host.isTranslated ? " (Rosetta)" : ""
+        lines.append("macOS \(host.macOSVersion), \(host.architecture.rawValue)\(rosetta), \(host.physicalMemoryMB) MB RAM, "
+            + "\(host.cpuCount) cores, hypervisor: \(host.hypervisorSupported)")
+        lines += [
+            "SDK: \(sdk?.root.path ?? "not found")",
+            "Command-line tools: \(sdkHealth?.commandLineToolsRevision.map { "\($0)" } ?? "none")",
+            "Java: \(java.map { "\($0.version) (\($0.source.rawValue)) \($0.home.path)" } ?? "none")",
+            "Emulator: \(sdkHealth?.emulatorRevision.map { "\($0)" } ?? "none") archs: \(sdkHealth?.emulatorArchitectures.map(\.rawValue).sorted() ?? [])",
+            "Problems: \(sdkHealth?.problems ?? [])",
+            "AVD home: \(avdStore.home.path)",
+            "",
+        ]
         lines += ["Installed images:"] + installedImages.map { "  \($0.packagePath) rev \($0.revision ?? "?")" }
         lines += ["", "Devices:"]
         for d in devices {
-            lines += ["  \(d.id): \(state(of: d).label), image \(d.systemImageDirectory ?? "?"), RAM \(d.ramMB ?? 0) MB, cores \(d.cores ?? 0), gpu \(d.config["hw.gpu.mode"] ?? "?")"]
+            let image = d.systemImageDirectory ?? "?", gpu = d.config["hw.gpu.mode"] ?? "?"
+            lines.append("  \(d.id): \(state(of: d).label), image \(image), RAM \(d.ramMB ?? 0) MB, cores \(d.cores ?? 0), gpu \(gpu)")
         }
         lines += ["", "Running instances:"] + instances.map { "  pid \($0.pid) \($0.avdID) \($0.serial)" }
         lines += ["", "Recent activity:"] + events.suffix(100).map { "  \($0.date) \($0.message)" }

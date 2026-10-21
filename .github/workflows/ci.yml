@@ -12,31 +12,56 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # macos-26 is the GA Apple Silicon image (Xcode 26.x default) as of 2026.
+  # Check https://github.com/actions/runner-images when bumping.
+  HOMEBREW_NO_AUTO_UPDATE: '1'
+
 jobs:
-  build-and-test:
-    # macos-26 is the GA Apple Silicon image (Xcode 26.x default) as of 2026.
-    # Check https://github.com/actions/runner-images when bumping.
+  lint:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install linters
+        run: brew install swiftlint swiftformat
+      - name: SwiftFormat (check)
+        run: swiftformat --lint .
+      - name: SwiftLint (warnings fail)
+        run: swiftlint lint --strict --quiet
+
+  core-tests:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
       - name: Toolchain
         run: swift --version && xcodebuild -version
-      - name: Build (warnings are errors)
-        run: swift build -Xswiftc -warnings-as-errors
-      - name: Unit tests
-        # Integration tests are skipped unless MOORBOX_INTEGRATION=1.
+      - name: Core unit tests (integration tests are opt-in and skipped)
         run: swift test
-      - name: Package app bundle (ad-hoc signed)
-        run: scripts/package-app.sh
+
+  app:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install build tools
+        run: brew install xcodegen create-dmg
+      - name: UI tests (XCUITest, fake SDK)
+        run: make test-ui
+      - name: Universal Release build + DMG
+        run: make dmg
       - name: Verify bundle
         run: |
           plutil -lint dist/Moorbox.app/Contents/Info.plist
           codesign --verify --strict dist/Moorbox.app
-          file dist/Moorbox.app/Contents/MacOS/Moorbox
+          lipo -archs dist/Moorbox.app/Contents/MacOS/Moorbox | grep -q 'x86_64 arm64'
+          hdiutil verify dist/Moorbox-*.dmg
       - uses: actions/upload-artifact@v4
         with:
           name: Moorbox-${{ github.sha }}
-          path: dist/Moorbox-*.zip
+          path: |
+            dist/Moorbox-*.dmg
+            dist/Moorbox-*.zip
           retention-days: 14
 
   checks:
@@ -45,10 +70,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Shell scripts parse
         run: for f in scripts/*.sh; do bash -n "$f"; done
+      - name: Homebrew formula parses
+        run: ruby -c packaging/homebrew/moorbox.rb
       - name: Required project files exist
         run: |
           for f in LICENSE NOTICE THIRD_PARTY_NOTICES.md README.md CONTRIBUTING.md CODE_OF_CONDUCT.md \
-                   SECURITY.md CHANGELOG.md VERSION docs/ROADMAP.md docs/PROJECT_STATUS.md \
+                   SECURITY.md CHANGELOG.md VERSION project.yml Makefile docs/ROADMAP.md docs/PROJECT_STATUS.md \
                    docs/PERFORMANCE.md docs/QA_CHECKLIST.md docs/architecture/ADR-001-runtime-strategy.md; do
             test -s "$f" || { echo "::error::missing $f"; exit 1; }
           done

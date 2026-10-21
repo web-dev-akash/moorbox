@@ -22,7 +22,9 @@ public struct RunningInstance: Hashable, Sendable {
     public var consolePort: Int
 
     /// adb serial for an emulator: `emulator-<console port>`.
-    public var serial: String { "emulator-\(consolePort)" }
+    public var serial: String {
+        "emulator-\(consolePort)"
+    }
 }
 
 public enum RuntimeError: LocalizedError, Equatable {
@@ -63,7 +65,9 @@ public struct EmulatorRuntime: AndroidRuntime {
     public let avdHome: URL
     public let logDirectory: URL
     public let discoveryDirectory: URL
-    public var name: String { "Android Emulator" + (sdk.emulatorRevision.map { " \($0)" } ?? "") }
+    public var name: String {
+        "Android Emulator" + (sdk.emulatorRevision.map { " \($0)" } ?? "")
+    }
 
     /// The emulator's running-instance registry on macOS (see `emulator -help-all`).
     public static let defaultDiscoveryDirectory = FileManager.default.homeDirectoryForCurrentUser
@@ -76,15 +80,23 @@ public struct EmulatorRuntime: AndroidRuntime {
         self.discoveryDirectory = discoveryDirectory
     }
 
-    var adb: ADB { ADB(executable: sdk.adbBinary) }
+    var adb: ADB {
+        ADB(executable: sdk.adbBinary)
+    }
 
     public static func arguments(for device: VirtualDevice, options: StartOptions) -> [String] {
         // No usage metrics or crash uploads, and never block startup on the emulator's
         // consent dialogs (a crash on a previous exit otherwise shows a modal prompt).
         var args = ["-avd", device.id, "-no-metrics", "-crash-report-mode", "never"]
-        if options.coldBoot { args.append("-no-snapshot-load") }
-        if options.skipSnapshotSave { args.append("-no-snapshot-save") }
-        if options.headless { args += ["-no-window", "-no-audio"] }
+        if options.coldBoot {
+            args.append("-no-snapshot-load")
+        }
+        if options.skipSnapshotSave {
+            args.append("-no-snapshot-save")
+        }
+        if options.headless {
+            args += ["-no-window", "-no-audio"]
+        }
         return args
     }
 
@@ -109,15 +121,21 @@ public struct EmulatorRuntime: AndroidRuntime {
            !fm.fileExists(atPath: sdk.root.appendingPathComponent(dir).appendingPathComponent("system.img").path) {
             throw RuntimeError.missingSystemImage(dir)
         }
-        if instance(for: device) != nil { throw RuntimeError.alreadyRunning(device.displayName) }
+        if instance(for: device) != nil {
+            throw RuntimeError.alreadyRunning(device.displayName)
+        }
 
         try fm.createDirectory(at: logDirectory, withIntermediateDirectories: true)
         let log = logFile(for: device)
         LogFiles.rotate(log)
         let header = "=== \(Date()) emulator \(Self.arguments(for: device, options: options).joined(separator: " "))\n"
         try? header.write(to: log, atomically: false, encoding: .utf8)
-        return try Shell.spawnDetached(sdk.emulatorBinary, Self.arguments(for: device, options: options),
-                                       environment: environment(), logFile: log)
+        return try Shell.spawnDetached(
+            sdk.emulatorBinary,
+            Self.arguments(for: device, options: options),
+            environment: environment(),
+            logFile: log
+        )
     }
 
     /// Reads the emulator's `pid_<pid>.ini` files. They can outlive the process, so each
@@ -164,7 +182,9 @@ public struct EmulatorRuntime: AndroidRuntime {
         _ = try? await adb.run(["-s", instance.serial, "emu", "kill"], timeout: 15)
         let deadline = Date().addingTimeInterval(timeout)
         while Shell.isAlive(instance.pid) {
-            if Date() > deadline { throw RuntimeError.stopTimedOut(instance.avdID) }
+            if Date() > deadline {
+                throw RuntimeError.stopTimedOut(instance.avdID)
+            }
             try await Task.sleep(for: .milliseconds(250))
         }
     }
@@ -173,7 +193,9 @@ public struct EmulatorRuntime: AndroidRuntime {
         guard Self.isEmulatorProcess(instance.pid) else { return }
         kill(instance.pid, SIGTERM)
         DispatchQueue.global().asyncAfter(deadline: .now() + 10) {
-            if Self.isEmulatorProcess(instance.pid) { kill(instance.pid, SIGKILL) }
+            if Self.isEmulatorProcess(instance.pid) {
+                kill(instance.pid, SIGKILL)
+            }
         }
     }
 }

@@ -45,6 +45,7 @@ public enum Shell {
         _ executable: URL,
         _ arguments: [String],
         environment: [String: String]? = nil,
+        input: Data? = nil,
         timeout: TimeInterval = 60
     ) async throws -> CommandResult {
         try Task.checkCancellation()
@@ -52,7 +53,8 @@ public enum Shell {
         process.executableURL = executable
         process.arguments = arguments
         if let environment { process.environment = environment }
-        process.standardInput = FileHandle.nullDevice
+        let inPipe = input.map { _ in Pipe() }
+        process.standardInput = inPipe ?? FileHandle.nullDevice
         let outPipe = Pipe(), errPipe = Pipe()
         process.standardOutput = outPipe
         process.standardError = errPipe
@@ -87,6 +89,11 @@ public enum Shell {
                     continuation.resume(throwing: CommandError.launchFailed(executable: executable.path, reason: error.localizedDescription))
                     return
                 }
+                if let inPipe, let input {
+                    // Answers for interactive prompts; closing stdin makes later reads see EOF.
+                    try? inPipe.fileHandleForWriting.write(contentsOf: input)
+                    try? inPipe.fileHandleForWriting.close()
+                }
                 DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { control.stop(.timeout) }
             }
         } onCancel: {
@@ -97,9 +104,10 @@ public enum Shell {
     /// Like `run`, but throws `CommandError.failed` on a non-zero exit code.
     @discardableResult
     public static func check(
-        _ executable: URL, _ arguments: [String], environment: [String: String]? = nil, timeout: TimeInterval = 60
+        _ executable: URL, _ arguments: [String], environment: [String: String]? = nil, input: Data? = nil,
+        timeout: TimeInterval = 60
     ) async throws -> CommandResult {
-        let result = try await run(executable, arguments, environment: environment, timeout: timeout)
+        let result = try await run(executable, arguments, environment: environment, input: input, timeout: timeout)
         guard result.succeeded else {
             throw CommandError.failed(executable: executable.lastPathComponent, exitCode: result.exitCode, message: result.combined)
         }

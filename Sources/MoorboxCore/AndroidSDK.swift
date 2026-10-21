@@ -22,6 +22,7 @@ public struct InstalledSystemImage: Hashable, Sendable, Identifiable {
 
 /// What the app found when it inspected an SDK directory.
 public struct SDKHealth: Sendable {
+    public var commandLineToolsRevision: Revision?
     public var emulatorRevision: Revision?
     public var emulatorArchitectures: Set<CPUArchitecture>
     public var adbPresent: Bool
@@ -41,6 +42,15 @@ public struct AndroidSDK: Hashable, Sendable {
 
     public var emulatorRevision: Revision? {
         Properties.read(root.appendingPathComponent("emulator/source.properties"))?["Pkg.Revision"]
+            .flatMap(Revision.init(string:))
+    }
+
+    /// Google's command-line tools (Android CLI launcher + avdmanager), needed to install
+    /// packages and create devices. Running existing devices doesn't need them.
+    public var commandLineToolsRevision: Revision? {
+        guard FileManager.default.isExecutableFile(atPath: root.appendingPathComponent("cmdline-tools/latest/bin/android").path)
+        else { return nil }
+        return Properties.read(root.appendingPathComponent("cmdline-tools/latest/source.properties"))?["Pkg.Revision"]
             .flatMap(Revision.init(string:))
     }
 
@@ -70,7 +80,7 @@ public struct AndroidSDK: Hashable, Sendable {
         return urls.map(\.standardizedFileURL).filter { seen.insert($0.path).inserted }
     }
 
-    /// The first candidate that looks like an SDK (has an emulator or platform-tools).
+    /// The first candidate that looks like an SDK (has the emulator, platform-tools or cmdline-tools).
     public static func discover(
         preferred: URL?, environment: [String: String] = ProcessInfo.processInfo.environment,
         home: URL = FileManager.default.homeDirectoryForCurrentUser
@@ -78,7 +88,10 @@ public struct AndroidSDK: Hashable, Sendable {
         let fm = FileManager.default
         return candidateLocations(preferred: preferred, environment: environment, home: home)
             .map(AndroidSDK.init(root:))
-            .first { fm.fileExists(atPath: $0.emulatorBinary.path) || fm.fileExists(atPath: $0.adbBinary.path) }
+            .first {
+                fm.fileExists(atPath: $0.emulatorBinary.path) || fm.fileExists(atPath: $0.adbBinary.path)
+                    || fm.fileExists(atPath: $0.root.appendingPathComponent("cmdline-tools/latest/bin/android").path)
+            }
     }
 
     public func health(host: HostInfo) -> SDKHealth {
@@ -93,7 +106,8 @@ public struct AndroidSDK: Hashable, Sendable {
         }
         let adb = fm.isExecutableFile(atPath: adbBinary.path)
         if !adb { problems.append("Android platform-tools (adb) are not installed in this SDK.") }
-        return SDKHealth(emulatorRevision: revision, emulatorArchitectures: archs, adbPresent: adb, problems: problems)
+        return SDKHealth(commandLineToolsRevision: commandLineToolsRevision, emulatorRevision: revision,
+                         emulatorArchitectures: archs, adbPresent: adb, problems: problems)
     }
 
     /// Scans `system-images/<platform>/<tag>/<abi>/`.
@@ -137,9 +151,10 @@ public struct AndroidSDK: Hashable, Sendable {
 
     // MARK: Licenses
     //
-    // sdkmanager records acceptance by appending sha1(trimmed license text) as a line in
-    // `licenses/<license-id>`. We use the same format so Android Studio and sdkmanager
-    // see the same consent, and we only ever append.
+    // Google's tools record acceptance as sha1(trimmed license text), one line per accepted
+    // text, in `licenses/<license-id>`. Moorbox only reads this to know whether to show a
+    // license again; the Android CLI writes it when it installs a package. Because the CLI
+    // no longer prompts, Moorbox always shows the license and asks before installing.
 
     public static func licenseHash(_ license: License) -> String {
         let text = license.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -151,17 +166,5 @@ public struct AndroidSDK: Hashable, Sendable {
         guard let text = try? String(contentsOf: file, encoding: .utf8) else { return false }
         let hash = Self.licenseHash(license)
         return text.split(whereSeparator: \.isNewline).contains { $0.trimmingCharacters(in: .whitespaces) == hash }
-    }
-
-    public func recordAcceptance(of license: License) throws {
-        guard !hasAccepted(license) else { return }
-        guard license.id.range(of: #"^[A-Za-z0-9._-]+$"#, options: .regularExpression) != nil else {
-            throw RepositoryError.malformed("invalid license id")
-        }
-        try FileManager.default.createDirectory(at: licensesDirectory, withIntermediateDirectories: true)
-        let file = licensesDirectory.appendingPathComponent(license.id)
-        var existing = (try? String(contentsOf: file, encoding: .utf8)) ?? ""
-        if !existing.isEmpty, !existing.hasSuffix("\n") { existing += "\n" }
-        try (existing + Self.licenseHash(license) + "\n").write(to: file, atomically: true, encoding: .utf8)
     }
 }

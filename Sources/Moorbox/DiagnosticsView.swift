@@ -6,6 +6,7 @@ struct DiagnosticsView: View {
     @Environment(AppModel.self) private var model
     @State private var logDevice: VirtualDevice?
     @State private var adbStatus: String?
+    @State private var adbConflicts: [ADB.OtherInstallation] = []
 
     var body: some View {
         Form {
@@ -18,12 +19,22 @@ struct DiagnosticsView: View {
             }
             Section("Android SDK") {
                 LabeledContent("Location", value: model.sdk?.root.path ?? "Not found")
+                LabeledContent("Command-line tools", value: model.sdkHealth?.commandLineToolsRevision.map { "\($0)" } ?? "Not installed")
+                LabeledContent("Java (for avdmanager)", value: model.java.map { "\($0.version) — \($0.source.rawValue)" } ?? (model.javaChecked ? "Not found" : "Checking…"))
                 LabeledContent("Emulator", value: model.sdkHealth?.emulatorRevision.map { "\($0)" } ?? "Not installed")
                 LabeledContent("platform-tools", value: model.sdk?.platformToolsRevision.map { "\($0)" } ?? "Not installed")
                 LabeledContent("Devices folder", value: model.avdStore.home.path)
                 LabeledContent("Emulator logs", value: AppModel.logDirectory.path)
                 ForEach(model.sdkHealth?.problems ?? [], id: \.self) { problem in
                     Label(problem, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                }
+                ForEach(adbConflicts, id: \.self) { other in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label("Another adb (\(other.version)) is installed at \(other.path).", systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                        Text("If both are used, they restart each other’s adb server and devices disconnect. Moorbox always uses the SDK’s adb; keep tools you run yourself on the same version (for example, update platform-tools here, or remove the other copy with `brew uninstall --cask android-platform-tools`).")
+                            .font(.caption).textSelection(.enabled)
+                    }
                 }
                 HStack {
                     Button("Check adb connection") { checkADB() }
@@ -66,6 +77,7 @@ struct DiagnosticsView: View {
             Button { exportReport() } label: { Label("Export Report…", systemImage: "square.and.arrow.up") }
                 .help("Save a diagnostics report with personal paths and tokens redacted. Nothing is uploaded.")
         }
+        .task { if let adb = model.adb { adbConflicts = await adb.conflictingInstallations() } }
         .sheet(item: $logDevice) { device in
             let url = model.runtime?.logFile(for: device)
             LogSheet(title: "Emulator log — \(device.displayName)", text: url.map { LogFiles.tail($0) } ?? "")
@@ -107,6 +119,8 @@ extension AppModel {
         var lines = ["Moorbox diagnostics — \(Date())", ""]
         lines += ["macOS \(host.macOSVersion), \(host.architecture.rawValue)\(host.isTranslated ? " (Rosetta)" : ""), \(host.physicalMemoryMB) MB RAM, \(host.cpuCount) cores, hypervisor: \(host.hypervisorSupported)"]
         lines += ["SDK: \(sdk?.root.path ?? "not found")",
+                  "Command-line tools: \(sdkHealth?.commandLineToolsRevision.map { "\($0)" } ?? "none")",
+                  "Java: \(java.map { "\($0.version) (\($0.source.rawValue)) \($0.home.path)" } ?? "none")",
                   "Emulator: \(sdkHealth?.emulatorRevision.map { "\($0)" } ?? "none") archs: \(sdkHealth?.emulatorArchitectures.map(\.rawValue).sorted() ?? [])",
                   "Problems: \(sdkHealth?.problems ?? [])",
                   "AVD home: \(avdStore.home.path)", ""]

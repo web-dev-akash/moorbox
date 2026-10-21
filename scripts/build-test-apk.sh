@@ -7,6 +7,9 @@ cd "$(dirname "$0")/.."
 SDK="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
 BT="$SDK/build-tools/$(ls "$SDK/build-tools" | sort -V | tail -1)"
 JAR="$SDK/platforms/$(ls "$SDK/platforms" | sort -V | tail -1)/android.jar"
+JAVA_HOME="${JAVA_HOME:-$(/usr/libexec/java_home -v 17+ 2>/dev/null || true)}"
+[[ -x "$JAVA_HOME/bin/javac" ]] || { echo "A JDK 17+ is required (set JAVA_HOME or install one, e.g. from adoptium.net)." >&2; exit 1; }
+export PATH="$JAVA_HOME/bin:$PATH" JAVA_HOME
 OUT=.build/test-apk
 rm -rf "$OUT" && mkdir -p "$OUT/classes" "$OUT/dex"
 

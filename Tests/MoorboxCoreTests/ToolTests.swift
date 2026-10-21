@@ -11,6 +11,12 @@ import Testing
         #expect(ADB.parseDevices("List of devices attached\n").isEmpty)
     }
 
+    @Test func parsesVersion() {
+        let out = "Android Debug Bridge version 1.0.41\nVersion 37.0.1-15733141\nInstalled as /opt/homebrew/bin/adb\n"
+        #expect(ADB.parseVersion(out) == "37.0.1-15733141")
+        #expect(ADB.parseVersion("garbage") == nil)
+    }
+
     @Test func packageNamesAreStrict() {
         #expect(ADB.isValidPackageName("com.example.app"))
         #expect(ADB.isValidPackageName("org.my_app.v2"))
@@ -166,17 +172,19 @@ import Testing
 }
 
 @Suite struct InstallerTests {
-    @Test func sha1OfFile() throws {
+    @Test func digests() throws {
         let tmp = try TempDir()
         try tmp.write("f", "abc")
-        #expect(try PackageInstaller.sha1(of: tmp.url.appendingPathComponent("f")) == "a9993e364706816aba3e25717850c26c9cd0d89d")
+        let f = tmp.url.appendingPathComponent("f")
+        #expect(try ArchiveInstaller.digest(of: f, .sha1("")) == "a9993e364706816aba3e25717850c26c9cd0d89d")
+        #expect(try ArchiveInstaller.digest(of: f, .sha256("")) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
     }
 
     @Test func acceptsSingleTopLevelFolder() throws {
         let tmp = try TempDir()
         try tmp.write("x/arm64-v8a/system.img")
         try FileManager.default.createSymbolicLink(atPath: tmp.url.appendingPathComponent("x/arm64-v8a/link").path, withDestinationPath: "system.img")
-        let top = try PackageInstaller.validateExtraction(at: tmp.url.appendingPathComponent("x"))
+        let top = try ArchiveInstaller.validateExtraction(at: tmp.url.appendingPathComponent("x"))
         #expect(top.lastPathComponent == "arm64-v8a")
     }
 
@@ -184,42 +192,134 @@ import Testing
         let tmp = try TempDir()
         try tmp.write("x/pkg/file")
         try FileManager.default.createSymbolicLink(atPath: tmp.url.appendingPathComponent("x/pkg/evil").path, withDestinationPath: "../../../etc")
-        #expect(throws: InstallError.self) { try PackageInstaller.validateExtraction(at: tmp.url.appendingPathComponent("x")) }
+        #expect(throws: InstallError.self) { try ArchiveInstaller.validateExtraction(at: tmp.url.appendingPathComponent("x")) }
         try FileManager.default.removeItem(at: tmp.url.appendingPathComponent("x/pkg/evil"))
         try FileManager.default.createSymbolicLink(atPath: tmp.url.appendingPathComponent("x/pkg/abs").path, withDestinationPath: "/etc/passwd")
-        #expect(throws: InstallError.self) { try PackageInstaller.validateExtraction(at: tmp.url.appendingPathComponent("x")) }
+        #expect(throws: InstallError.self) { try ArchiveInstaller.validateExtraction(at: tmp.url.appendingPathComponent("x")) }
     }
 
     @Test func rejectsUnexpectedLayout() throws {
         let tmp = try TempDir()
         try tmp.write("x/a/file")
         try tmp.write("x/b/file")
-        #expect(throws: InstallError.self) { try PackageInstaller.validateExtraction(at: tmp.url.appendingPathComponent("x")) }
+        #expect(throws: InstallError.self) { try ArchiveInstaller.validateExtraction(at: tmp.url.appendingPathComponent("x")) }
         try tmp.write("y/loose-file")
-        #expect(throws: InstallError.self) { try PackageInstaller.validateExtraction(at: tmp.url.appendingPathComponent("y")) }
+        #expect(throws: InstallError.self) { try ArchiveInstaller.validateExtraction(at: tmp.url.appendingPathComponent("y")) }
     }
 
     @Test func refusesBeforeDownloading() async throws {
         let tmp = try TempDir()
+        let destination = tmp.url.appendingPathComponent("pkg")
+        func spec(_ url: String, hosts: Set<String> = ["dl.google.com"]) -> ArchiveSpec {
+            ArchiveSpec(url: URL(string: url)!, size: 10, checksum: .sha1(String(repeating: "0", count: 40)), format: .zip, trustedHosts: hosts)
+        }
+        await #expect(throws: InstallError.untrustedURL("http://dl.google.com/x.zip")) {
+            try await ArchiveInstaller.install(spec("http://dl.google.com/x.zip"), to: destination, stagingRoot: tmp.url) { _ in }
+        }
+        await #expect(throws: InstallError.untrustedURL("https://evil.example/x.zip")) {
+            try await ArchiveInstaller.install(spec("https://evil.example/x.zip"), to: destination, stagingRoot: tmp.url) { _ in }
+        }
+        try tmp.write("pkg/source.properties")
+        await #expect(throws: InstallError.alreadyInstalled("pkg")) {
+            try await ArchiveInstaller.install(spec("https://dl.google.com/x.zip"), to: destination, stagingRoot: tmp.url) { _ in }
+        }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: tmp.url.path) == ["pkg"]) // no staging left behind
+    }
+}
+
+@Suite struct JavaTests {
+    @Test func parsesReleaseFiles() {
+        #expect(JavaLocator.parseRelease("IMPLEMENTOR=\"JetBrains\"\nJAVA_VERSION=\"21.0.10\"\n")?.major == 21)
+        #expect(JavaLocator.parseRelease("JAVA_VERSION=\"17.0.20\"")?.version == "17.0.20")
+        #expect(JavaLocator.parseRelease("JAVA_VERSION=\"1.8.0_402\"")?.major == 8)
+        #expect(JavaLocator.parseRelease("OS_NAME=Darwin") == nil)
+    }
+
+    func fakeJDK(_ tmp: TempDir, _ path: String, version: String) throws -> URL {
+        try tmp.write("\(path)/release", "JAVA_VERSION=\"\(version)\"\n")
+        try tmp.write("\(path)/bin/java", "#!/bin/sh\n")
+        let java = tmp.url.appendingPathComponent("\(path)/bin/java")
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: java.path)
+        return tmp.url.appendingPathComponent(path)
+    }
+
+    @Test func prefersJavaHomeThenManagedNewestFirst() async throws {
+        let tmp = try TempDir()
+        let env = try fakeJDK(tmp, "env-jdk", version: "21.0.1")
+        _ = try fakeJDK(tmp, "managed/jdk-17.0.9+9/Contents/Home", version: "17.0.9")
+        _ = try fakeJDK(tmp, "managed/jdk-21.0.5+11/Contents/Home", version: "21.0.5")
+        let managed = tmp.url.appendingPathComponent("managed")
+        let fromEnv = await JavaLocator.find(managedRoot: managed, environment: ["JAVA_HOME": env.path])
+        #expect(fromEnv?.source == .environment)
+        let fromManaged = await JavaLocator.find(managedRoot: managed, environment: [:])
+        #expect(fromManaged?.source == .moorbox)
+        #expect(fromManaged?.version == "21.0.5")
+    }
+
+    @Test func rejectsTooOldOrBrokenJDKs() throws {
+        let tmp = try TempDir()
+        let old = try fakeJDK(tmp, "old", version: "11.0.2")
+        #expect(JavaLocator.inspect(home: old, source: .environment)?.majorVersion == 11) // found, but…
+        #expect(JavaLocator.minimumMajorVersion == 17) // …below the minimum, so find() skips it
+        try tmp.write("broken/release", "JAVA_VERSION=\"21\"")
+        #expect(JavaLocator.inspect(home: tmp.url.appendingPathComponent("broken"), source: .environment) == nil) // no bin/java
+    }
+
+    @Test func parsesAdoptiumResponse() throws {
+        let release = try Adoptium.parse(fixture("adoptium-latest-21-aarch64.json"))
+        #expect(release.archiveName.hasSuffix(".tar.gz"))
+        #expect(release.url.host == "github.com")
+        #expect(release.url.path.hasPrefix("/adoptium/"))
+        #expect(release.sha256.count == 64)
+        #expect(release.size > 100_000_000)
+        #expect(release.releaseName.hasPrefix("jdk-21"))
+        #expect(throws: (any Error).self) { try Adoptium.parse(Data("[]".utf8)) }
+        let evil = Data(#"[{"binary":{"image_type":"jdk","package":{"name":"x.tar.gz","link":"https://evil.example/x.tar.gz","checksum":"\#(String(repeating: "a", count: 64))","size":1}},"release_name":"jdk-21","version":{"semver":"21"}}]"#.utf8)
+        #expect(throws: RepositoryError.self) { try Adoptium.parse(evil) }
+    }
+}
+
+@Suite struct GoogleToolTests {
+    @Test func parsesAVDManagerDeviceList() throws {
+        let profiles = AVDManager.parseDevices(String(decoding: try fixture("avdmanager-list-device.txt"), as: UTF8.self))
+        #expect(profiles.count == 96)
+        let medium = try #require(profiles.first { $0.id == "medium_phone" })
+        #expect(medium.name == "Medium Phone")
+        #expect(medium.oem == "Generic")
+        #expect(medium.isPhoneOrTablet)
+        #expect(profiles.contains { $0.id == "medium_tablet" && $0.isPhoneOrTablet })
+        #expect(profiles.contains { $0.id == "pixel_9" })
+        let wear = profiles.filter { $0.tag?.contains("wear") == true }
+        #expect(!wear.isEmpty && wear.allSatisfy { !$0.isPhoneOrTablet })
+    }
+
+    @Test func androidCLIArguments() throws {
+        let cli = AndroidCLI(sdk: AndroidSDK(root: URL(fileURLWithPath: "/sdk")))
+        #expect(cli.arguments(["sdk", "list"]) == ["--no-metrics", "--sdk=/sdk", "sdk", "list"])
+        #expect(AndroidCLI.cliPath("system-images;android-36;default;arm64-v8a") == "system-images/android-36/default/arm64-v8a")
+        #expect(AndroidCLI.channelFlags("stable").isEmpty)
+        #expect(AndroidCLI.channelFlags("beta") == ["--beta"])
+        #expect(AndroidCLI.channelFlags("canary") == ["--canary"])
         let catalog = try loadCatalog()
-        let pkg = try #require(catalog.latestStable("platform-tools", for: .arm64))
-        let license = try #require(catalog.licenses[pkg.licenseID!])
-        let installer = PackageInstaller(sdk: AndroidSDK(root: tmp.url), host: .arm64)
-        // License not yet accepted.
-        await #expect(throws: InstallError.licenseNotAccepted(license.id)) {
-            try await installer.install(pkg, license: license) { _ in }
-        }
-        // Already installed and not replacing.
-        try AndroidSDK(root: tmp.url).recordAcceptance(of: license)
-        try tmp.write("platform-tools/source.properties", "Pkg.Revision=1\n")
-        await #expect(throws: InstallError.alreadyInstalled(pkg.displayName)) {
-            try await installer.install(pkg, license: license) { _ in }
-        }
-        // Untrusted host in metadata.
-        var evil = pkg
-        evil.path = "evil"
-        evil.archives = evil.archives.map { var a = $0; a.url = URL(string: "https://example.com/x.zip")!; return a }
-        await #expect(throws: RepositoryError.self) { try await installer.install(evil, license: nil) { _ in } }
-        #expect(!FileManager.default.fileExists(atPath: tmp.url.appendingPathComponent(".moorbox-staging").path))
+        let emulatorDev = try #require(catalog.packages.first { $0.path == "emulator" && $0.channel == "dev" })
+        #expect(AndroidCLI.installArguments(for: emulatorDev) == ["sdk", "install", "--canary", "emulator"])
+    }
+
+    @Test func cliErrorsDropNoise() {
+        let out = "\rhttps://dl.google.com/x.zip...\nUnzipping x......\nDisable Android CLI metrics collection by using the --no-metrics flag.\nError: Package not found: foo\n"
+        #expect(AndroidCLI.errorMessage(from: out) == "Error: Package not found: foo")
+    }
+
+    @Test func missingToolsAreReportedNotCrashed() async {
+        let cli = AndroidCLI(sdk: AndroidSDK(root: URL(fileURLWithPath: "/nonexistent")))
+        #expect(!cli.isInstalled)
+        await #expect(throws: ToolError.notInstalled("Google's command-line tools")) { try await cli.remove("emulator") }
+    }
+}
+
+@Suite struct ShellInputTests {
+    @Test func feedsStandardInput() async throws {
+        let r = try await Shell.run(URL(fileURLWithPath: "/bin/sh"), ["-c", "read answer; echo got:$answer"], input: Data("no\n".utf8))
+        #expect(r.stdout == "got:no\n")
     }
 }

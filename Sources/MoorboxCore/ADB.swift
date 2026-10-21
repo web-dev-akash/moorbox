@@ -36,6 +36,36 @@ public struct ADB: Sendable {
         return r
     }
 
+    /// `adb version` → "37.0.1-15733141".
+    public static func parseVersion(_ output: String) -> String? {
+        output.split(whereSeparator: \.isNewline).first { $0.hasPrefix("Version ") }
+            .map { String($0.dropFirst("Version ".count)).trimmingCharacters(in: .whitespaces) }
+    }
+
+    public func version() async -> String? {
+        (try? await run(["version"], timeout: 10)).flatMap { Self.parseVersion($0.stdout) }
+    }
+
+    public struct OtherInstallation: Hashable, Sendable {
+        public var path: String
+        public var version: String
+    }
+
+    /// Other adb binaries in the usual PATH locations (e.g. Homebrew's android-platform-tools)
+    /// whose version differs from this one. Two adb versions restart each other's server,
+    /// which disconnects devices. Reported only; Moorbox never removes them.
+    public func conflictingInstallations(candidates: [String] = ["/opt/homebrew/bin/adb", "/usr/local/bin/adb"]) async -> [OtherInstallation] {
+        guard let mine = await version() else { return [] }
+        let ownPath = executable.resolvingSymlinksInPath().path
+        var result: [OtherInstallation] = []
+        for path in candidates where FileManager.default.isExecutableFile(atPath: path) {
+            let resolved = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+            guard resolved.path != ownPath, let other = await ADB(executable: resolved).version(), other != mine else { continue }
+            result.append(OtherInstallation(path: path, version: other))
+        }
+        return result
+    }
+
     public func startServer() async throws {
         try await Shell.check(executable, ["start-server"], timeout: 20)
     }

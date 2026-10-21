@@ -49,23 +49,6 @@ public struct VirtualDevice: Identifiable, Hashable, Sendable {
     }
 }
 
-public struct DeviceProfile: Hashable, Sendable, Identifiable {
-    public var id: String
-    public var name: String
-    public var width: Int
-    public var height: Int
-    public var density: Int
-    public var isTablet: Bool = false
-
-    /// Generic profiles; no manufacturer branding.
-    public static let all: [DeviceProfile] = [
-        DeviceProfile(id: "phone", name: "Phone — 6.4″ 1080×2400", width: 1080, height: 2400, density: 420),
-        DeviceProfile(id: "compact", name: "Compact phone — 720×1600 (lightest)", width: 720, height: 1600, density: 320),
-        DeviceProfile(id: "large-phone", name: "Large phone — 1440×3120", width: 1440, height: 3120, density: 560),
-        DeviceProfile(id: "tablet", name: "Tablet — 10.1″ 2560×1600", width: 2560, height: 1600, density: 320, isTablet: true),
-    ]
-}
-
 public struct ResourcePreset: Hashable, Sendable, Identifiable {
     public var id: String
     public var name: String
@@ -123,17 +106,18 @@ public enum GPUMode: String, CaseIterable, Sendable, Identifiable {
 public struct DeviceSpec: Sendable, Equatable {
     public var displayName: String
     public var image: InstalledSystemImage
-    public var profile: DeviceProfile
+    /// An `avdmanager` hardware profile id, e.g. `medium_phone`.
+    public var profileID: String
     public var ramMB: Int
     public var cores: Int
     public var storageGB: Int
     public var gpu: GPUMode = .auto
 
-    public init(displayName: String, image: InstalledSystemImage, profile: DeviceProfile,
+    public init(displayName: String, image: InstalledSystemImage, profileID: String,
                 resources: ResourcePreset, gpu: GPUMode = .auto) {
         self.displayName = displayName
         self.image = image
-        self.profile = profile
+        self.profileID = profileID
         self.ramMB = resources.ramMB
         self.cores = resources.cores
         self.storageGB = resources.storageGB
@@ -208,75 +192,39 @@ public struct AVDStore: Sendable {
         if !limits.storageGB.contains(spec.storageGB) {
             throw AVDError.outOfRange("Storage must be between \(limits.storageGB.lowerBound) and \(limits.storageGB.upperBound) GB.")
         }
-        let p = spec.profile
-        if !(320...4096).contains(p.width) || !(320...4096).contains(p.height) || !(120...640).contains(p.density) {
-            throw AVDError.outOfRange("Screen must be 320–4096 pixels per side with a density of 120–640 dpi.")
-        }
     }
 
-    /// The `config.ini` contents for a new device. Unlisted hardware keys use emulator defaults.
-    public static func config(id: String, spec: DeviceSpec) -> [String: String] {
-        let img = spec.image, p = spec.profile
-        return [
-            "AvdId": id,
+    /// Settings Moorbox applies on top of what `avdmanager` writes, the same way Android
+    /// Studio's device wizard does. Everything else stays as Google's tool created it.
+    public static func overrides(for spec: DeviceSpec) -> [String: String] {
+        [
             "avd.ini.displayname": spec.displayName.trimmingCharacters(in: .whitespaces),
-            "avd.ini.encoding": "UTF-8",
-            "abi.type": img.abi,
-            "hw.cpu.arch": img.abi.hasPrefix("arm64") ? "arm64" : "x86_64",
-            "hw.cpu.ncore": String(spec.cores),
             "hw.ramSize": String(spec.ramMB),
+            "hw.cpu.ncore": String(spec.cores),
             "disk.dataPartition.size": "\(spec.storageGB)G",
-            "hw.lcd.width": String(p.width),
-            "hw.lcd.height": String(p.height),
-            "hw.lcd.density": String(p.density),
-            "hw.initialOrientation": p.isTablet ? "landscape" : "portrait",
-            "skin.name": "\(p.width)x\(p.height)",
-            "skin.dynamic": "yes",
-            "showDeviceFrame": "no",
-            "hw.keyboard": "yes",
-            "hw.mainKeys": "no",
             "hw.gpu.enabled": "yes",
             "hw.gpu.mode": spec.gpu.rawValue,
-            "hw.audioInput": "no",
-            "hw.camera.back": "none",
-            "hw.camera.front": "none",
-            "hw.sdCard": "no",
-            "image.sysdir.1": img.relativeDirectory,
-            "tag.id": img.tagID,
-            "tag.display": img.tagDisplay,
-            "PlayStore.enabled": img.hasPlayStore ? "true" : "false",
+            "hw.keyboard": "yes",
             "fastboot.forceColdBoot": "no",
             "fastboot.forceFastBoot": "yes",
         ]
     }
 
+    /// Creates the device with Google's `avdmanager`, then applies the chosen resources.
     @discardableResult
-    public func create(_ spec: DeviceSpec, limits: ResourceLimits) throws -> VirtualDevice {
+    public func create(_ spec: DeviceSpec, limits: ResourceLimits, using manager: AVDManager) async throws -> VirtualDevice {
         try Self.validate(spec, limits: limits)
         let id = Self.makeID(from: spec.displayName.trimmingCharacters(in: .whitespaces))
         let fm = FileManager.default
-        let iniFile = home.appendingPathComponent("\(id).ini")
-        let dir = home.appendingPathComponent("\(id).avd")
         let taken = list().contains { $0.id.lowercased() == id.lowercased() || $0.displayName == spec.displayName }
-        if taken || fm.fileExists(atPath: iniFile.path) || fm.fileExists(atPath: dir.path) {
+        if taken || fm.fileExists(atPath: home.appendingPathComponent("\(id).ini").path)
+            || fm.fileExists(atPath: home.appendingPathComponent("\(id).avd").path) {
             throw AVDError.nameTaken(spec.displayName)
         }
-        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
-        do {
-            try Properties.write(Self.config(id: id, spec: spec), to: dir.appendingPathComponent("config.ini"))
-            try Properties.write([
-                "avd.ini.encoding": "UTF-8",
-                "path": dir.path,
-                "path.rel": "avd/\(id).avd",
-                "target": spec.image.platformDirectory,
-            ], to: iniFile)
-        } catch {
-            // Only remove what this call created.
-            try? fm.removeItem(at: dir)
-            try? fm.removeItem(at: iniFile)
-            throw error
-        }
-        guard let device = load(iniFile: iniFile) else { throw AVDError.notFound(spec.displayName) }
+        try await manager.create(id: id, systemImagePackage: spec.image.packagePath, deviceID: spec.profileID)
+        guard let created = load(iniFile: home.appendingPathComponent("\(id).ini")) else { throw AVDError.notFound(spec.displayName) }
+        try update(created, changes: Self.overrides(for: spec))
+        guard let device = load(iniFile: created.iniFile) else { throw AVDError.notFound(spec.displayName) }
         return device
     }
 

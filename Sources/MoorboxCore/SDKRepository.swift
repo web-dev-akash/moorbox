@@ -180,12 +180,10 @@ public enum AndroidVersion {
 
 public enum RepositoryError: LocalizedError {
     case malformed(String)
-    case untrustedURL(String)
 
     public var errorDescription: String? {
         switch self {
         case let .malformed(what): "The Android SDK repository metadata could not be read (\(what))."
-        case let .untrustedURL(url): "Refusing to download from an untrusted location: \(url)"
         }
     }
 }
@@ -306,10 +304,6 @@ public struct SDKRepository: Sendable {
         }
     }
 
-    /// Downloads are only ever made over HTTPS from Google's SDK host.
-    public static func validateDownloadURL(_ url: URL) throws {
-        guard url.scheme == "https", url.host == "dl.google.com" else {
-            throw RepositoryError.untrustedURL(url.absoluteString)
-        }
-    }
+    /// SDK downloads are only ever made over HTTPS from Google's SDK host.
+    public static let trustedHost = "dl.google.com"
 }

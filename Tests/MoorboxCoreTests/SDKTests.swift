@@ -83,20 +83,28 @@ final class TempDir {
         #expect(AndroidSDK.licenseHash(license) == "9002c006f4b8d9a16e715a9fa4df30ddb8abf9d9")
     }
 
-    @Test func recordingLicenseAppendsAndPreservesExistingLines() throws {
+    @Test func detectsAcceptedLicensesWrittenByGoogleTools() throws {
         let tmp = try TempDir()
         let sdk = AndroidSDK(root: tmp.url)
-        try tmp.write("licenses/test-license", "\n24333f8a63b6825ea9c5514f83c2829b004d1fee")
         let license = License(id: "test-license", text: "  Some terms\n")
         #expect(!sdk.hasAccepted(license))
-        try sdk.recordAcceptance(of: license)
-        try sdk.recordAcceptance(of: license) // idempotent
+        // Format written by the Android CLI / sdkmanager: one sha1 per line, sometimes a leading blank line.
+        try tmp.write("licenses/test-license", "\n24333f8a63b6825ea9c5514f83c2829b004d1fee\n\(AndroidSDK.licenseHash(license))")
         #expect(sdk.hasAccepted(license))
-        let text = try String(contentsOf: tmp.url.appendingPathComponent("licenses/test-license"), encoding: .utf8)
-        let lines = text.split(separator: "\n")
-        #expect(lines.count == 2)
-        #expect(lines[0] == "24333f8a63b6825ea9c5514f83c2829b004d1fee")
-        #expect(throws: RepositoryError.self) { try sdk.recordAcceptance(of: License(id: "../evil", text: "x")) }
+        #expect(!sdk.hasAccepted(License(id: "test-license", text: "Other terms")))
+    }
+
+    @Test func commandLineToolsDetection() throws {
+        let tmp = try TempDir()
+        let sdk = AndroidSDK(root: tmp.url)
+        #expect(sdk.commandLineToolsRevision == nil)
+        try tmp.write("cmdline-tools/latest/bin/android", "#!/bin/sh\n")
+        try FileManager.default.setAttributes([.posixPermissions: 0o755],
+                                              ofItemAtPath: tmp.url.appendingPathComponent("cmdline-tools/latest/bin/android").path)
+        try tmp.write("cmdline-tools/latest/source.properties", "Pkg.Revision=23.0\nPkg.Path=cmdline-tools;23.0\n")
+        #expect(sdk.commandLineToolsRevision == Revision(23, 0))
+        // An SDK holding only cmdline-tools is still discovered.
+        #expect(AndroidSDK.discover(preferred: tmp.url, environment: [:], home: tmp.url)?.root == sdk.root)
     }
 }
 

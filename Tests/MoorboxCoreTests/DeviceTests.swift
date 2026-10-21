@@ -38,9 +38,31 @@ let smallHost = HostInfo(macOSVersion: "26.0", architecture: .arm64, physicalMem
 
 @Suite struct AVDTests {
     func spec(_ name: String = "Test Phone", ram: Int = 2048) -> DeviceSpec {
-        var s = DeviceSpec(displayName: name, image: testImage, profile: DeviceProfile.all[0], resources: .lightweight)
+        var s = DeviceSpec(displayName: name, image: testImage, profileID: "medium_phone", resources: .lightweight)
         s.ramMB = ram
         return s
+    }
+
+    /// Writes an AVD the way avdmanager does (subset of its real output, including its quirks).
+    func writeAVDManagerDevice(_ tmp: TempDir, id: String = "Test_Phone") throws -> VirtualDevice {
+        try tmp.write("\(id).ini", "avd.ini.encoding=UTF-8\npath=\(tmp.url.path)/\(id).avd\ntarget=android-36\n")
+        try tmp.write("\(id).avd/config.ini", """
+            avd.id=\(id)
+            avd.name=\(id)
+            disk.dataPartition.path=<temp>
+            disk.dataPartition.size=10G
+            hw.cpu.ncore=4
+            hw.device.name=medium_phone
+            hw.gpu.enabled=no
+            hw.gpu.mode=auto
+            hw.lcd.density=420
+            hw.lcd.height=2400
+            hw.lcd.width=1080
+            hw.ramSize=2G
+            image.sysdir.1=system-images/android-36/google_apis/arm64-v8a/
+            tag.id=google_apis
+            """)
+        return try #require(AVDStore(home: tmp.url).list().first { $0.id == id })
     }
 
     @Test func idsAreSanitised() {
@@ -55,47 +77,57 @@ let smallHost = HostInfo(macOSVersion: "26.0", architecture: .arm64, physicalMem
         try AVDStore.validate(spec(), limits: limits)
         #expect(throws: AVDError.self) { try AVDStore.validate(spec("  "), limits: limits) }
         #expect(throws: AVDError.self) { try AVDStore.validate(spec("???"), limits: limits) }
+        #expect(throws: AVDError.self) { try AVDStore.validate(spec(String(repeating: "a", count: 61)), limits: limits) }
         #expect(throws: AVDError.self) { try AVDStore.validate(spec(ram: 1024), limits: limits) }
         #expect(throws: AVDError.self) { try AVDStore.validate(spec(ram: 16384), limits: limits) }
-        var badScreen = spec()
-        badScreen.profile.width = 100
-        #expect(throws: AVDError.self) { try AVDStore.validate(badScreen, limits: limits) }
     }
 
-    @Test func configContainsRuntimeKeys() {
-        let config = AVDStore.config(id: "Test_Phone", spec: spec())
-        #expect(config["AvdId"] == "Test_Phone")
-        #expect(config["image.sysdir.1"] == "system-images/android-36/google_apis/arm64-v8a/")
-        #expect(config["hw.cpu.arch"] == "arm64")
-        #expect(config["abi.type"] == "arm64-v8a")
-        #expect(config["hw.ramSize"] == "2048")
-        #expect(config["hw.cpu.ncore"] == "2")
-        #expect(config["disk.dataPartition.size"] == "4G")
-        #expect(config["hw.lcd.width"] == "1080")
-        #expect(config["PlayStore.enabled"] == "false")
-        #expect(config["fastboot.forceFastBoot"] == "yes")
+    @Test func overridesOnlyTouchChosenSettings() throws {
+        let tmp = try TempDir()
+        let device = try writeAVDManagerDevice(tmp)
+        let overrides = AVDStore.overrides(for: spec())
+        #expect(overrides["avd.ini.displayname"] == "Test Phone")
+        #expect(overrides["hw.ramSize"] == "2048")
+        #expect(overrides["hw.cpu.ncore"] == "2")
+        #expect(overrides["disk.dataPartition.size"] == "4G")
+        #expect(overrides["hw.gpu.enabled"] == "yes") // avdmanager writes "no"
+        let store = AVDStore(home: tmp.url)
+        try store.update(device, changes: overrides)
+        let updated = try #require(store.list().first)
+        #expect(updated.displayName == "Test Phone")
+        #expect(updated.ramMB == 2048)
+        #expect(updated.config["hw.gpu.enabled"] == "yes")
+        // Everything avdmanager wrote that we didn't choose is preserved.
+        #expect(updated.config["hw.device.name"] == "medium_phone")
+        #expect(updated.config["hw.lcd.density"] == "420")
+        #expect(updated.config["tag.id"] == "google_apis")
     }
 
-    @Test func createListUpdateRename() throws {
+    @Test func nameCollisionsAreRejectedBeforeRunningAVDManager() async throws {
+        let tmp = try TempDir()
+        _ = try writeAVDManagerDevice(tmp)
+        let manager = AVDManager(sdk: AndroidSDK(root: tmp.url),
+                                 java: JavaRuntime(home: tmp.url, version: "21", majorVersion: 21, source: .system),
+                                 avdHome: tmp.url)
+        await #expect(throws: AVDError.nameTaken("Test Phone")) {
+            try await AVDStore(home: tmp.url).create(spec(), limits: ResourceLimits.compute(host: bigHost, apiLevel: "36"), using: manager)
+        }
+        // With a free name it gets as far as avdmanager, which isn't installed in this SDK.
+        await #expect(throws: ToolError.notInstalled("Google's command-line tools (avdmanager)")) {
+            try await AVDStore(home: tmp.url).create(spec("Fresh"), limits: ResourceLimits.compute(host: bigHost, apiLevel: "36"), using: manager)
+        }
+    }
+
+    @Test func updateAndRenameKeepUnknownKeys() throws {
         let tmp = try TempDir()
         let store = AVDStore(home: tmp.url)
-        let limits = ResourceLimits.compute(host: bigHost, apiLevel: "36")
-        let device = try store.create(spec(), limits: limits)
-        #expect(device.id == "Test_Phone")
-        #expect(device.target == "android-36")
-        #expect(device.apiLevel == "36")
-        #expect(device.ramMB == 2048)
-        #expect(device.hasUserData == false)
-        #expect(throws: AVDError.nameTaken("Test Phone")) { try store.create(spec(), limits: limits) }
-
-        // Unknown keys written by other tools must survive updates.
-        try tmp.write("Test_Phone.avd/config.ini", Properties.serialize(device.config.merging(["custom.key": "kept"]) { a, _ in a }))
+        let device = try writeAVDManagerDevice(tmp)
         try store.update(device, changes: ["hw.ramSize": "3072"])
         try store.rename(device, to: "Renamed")
         let reloaded = try #require(store.list().first)
         #expect(reloaded.displayName == "Renamed")
         #expect(reloaded.ramMB == 3072)
-        #expect(reloaded.config["custom.key"] == "kept")
+        #expect(reloaded.config["disk.dataPartition.path"] == "<temp>")
         #expect(reloaded.id == "Test_Phone") // the on-disk id never changes
         #expect(throws: AVDError.self) { try store.rename(device, to: " ") }
     }
@@ -123,7 +155,7 @@ let smallHost = HostInfo(macOSVersion: "26.0", architecture: .arm64, physicalMem
     @Test func quickBootResetKeepsUserData() throws {
         let tmp = try TempDir()
         let store = AVDStore(home: tmp.url)
-        let device = try store.create(spec(), limits: ResourceLimits.compute(host: bigHost, apiLevel: "36"))
+        let device = try writeAVDManagerDevice(tmp)
         try tmp.write("Test_Phone.avd/userdata-qemu.img", "data")
         try tmp.write("Test_Phone.avd/snapshots/default_boot/snapshot.pb", "snap")
         #expect(device.hasQuickBootSnapshot)

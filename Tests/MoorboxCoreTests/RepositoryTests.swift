@@ -94,11 +94,6 @@ func loadCatalog() throws -> Catalog {
         #expect(pkg("a;;b").installDirectory == nil)
     }
 
-    @Test func onlyTrustsGoogleHTTPS() throws {
-        try SDKRepository.validateDownloadURL(URL(string: "https://dl.google.com/android/repository/x.zip")!)
-        #expect(throws: RepositoryError.self) { try SDKRepository.validateDownloadURL(URL(string: "http://dl.google.com/x.zip")!) }
-        #expect(throws: RepositoryError.self) { try SDKRepository.validateDownloadURL(URL(string: "https://evil.example/x.zip")!) }
-    }
 }
 
 @Suite struct VersionTests {

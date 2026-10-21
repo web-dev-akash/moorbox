@@ -2,6 +2,7 @@ import AppKit
 import MoorboxCore
 import Foundation
 import Observation
+import OSLog
 
 struct AppEvent: Identifiable {
     enum Level { case info, warning, error }
@@ -54,6 +55,17 @@ final class AppModel {
     private(set) var catalogError: String?
     private(set) var isLoadingCatalog = false
     private(set) var installs: [String: InstallProgress] = [:]
+    static let jdkInstallKey = "jdk"
+
+    // Java + device profiles
+    private(set) var java: JavaRuntime?
+    private(set) var javaChecked = false
+    private(set) var jdkRelease: JDKRelease?
+    private(set) var jdkError: String?
+    private(set) var hardwareProfiles: [HardwareProfile] = []
+    private(set) var isLoadingProfiles = false
+    private(set) var profilesError: String?
+    private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Moorbox", category: "app")
     private var installTasks: [String: Task<Void, Never>] = [:]
 
     // UI
@@ -71,6 +83,7 @@ final class AppModel {
 
     init() {
         refresh()
+        locateJava()
         watchDiscoveryDirectory()
         if !setupCompleted || sdk == nil { showSetup = true }
         NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
@@ -279,13 +292,79 @@ final class AppModel {
         log(.warning, "Force-stopping \(device.displayName).")
     }
 
-    func create(_ spec: DeviceSpec) throws -> VirtualDevice {
+    /// Creates a device with Google's avdmanager. Needs cmdline-tools and a JDK.
+    func create(_ spec: DeviceSpec) async throws -> VirtualDevice {
+        guard let sdk, sdk.commandLineToolsRevision != nil else { throw ToolError.notInstalled("Google's command-line tools") }
+        guard let java else { throw ToolError.notInstalled("A Java runtime (JDK 17 or newer)") }
         let limits = ResourceLimits.compute(host: host, apiLevel: spec.image.apiLevel)
-        let device = try avdStore.create(spec, limits: limits)
-        log(.info, "Created device \(device.displayName).")
+        let manager = AVDManager(sdk: sdk, java: java, avdHome: avdStore.home)
+        let device = try await avdStore.create(spec, limits: limits, using: manager)
+        log(.info, "Created device \(device.displayName) (\(spec.profileID), \(spec.image.packagePath)).")
         refresh()
         selectedDeviceID = device.id
         return device
+    }
+
+    /// Hardware profiles from avdmanager (loaded on demand; avdmanager takes a few seconds).
+    func loadHardwareProfiles() {
+        guard hardwareProfiles.isEmpty, !isLoadingProfiles, let sdk, sdk.commandLineToolsRevision != nil, let java else { return }
+        isLoadingProfiles = true
+        profilesError = nil
+        let manager = AVDManager(sdk: sdk, java: java, avdHome: avdStore.home)
+        Task {
+            do {
+                hardwareProfiles = try await manager.listDevices().filter(\.isPhoneOrTablet)
+            } catch {
+                profilesError = error.localizedDescription
+                log(.error, "Could not list device profiles: \(error.localizedDescription)")
+            }
+            isLoadingProfiles = false
+        }
+    }
+
+    // MARK: Java (needed by avdmanager)
+
+    func locateJava() {
+        Task {
+            java = await JavaLocator.find(managedRoot: JavaLocator.managedRoot(applicationSupport: Self.supportDirectory))
+            javaChecked = true
+            if let java { logger.info("Using JDK \(java.version, privacy: .public) from \(java.source.rawValue, privacy: .public)") }
+        }
+    }
+
+    func loadJDKRelease() {
+        guard jdkRelease == nil else { return }
+        Task {
+            do { jdkRelease = try await Adoptium.fetchLatest(for: host.architecture) } catch {
+                jdkError = "Couldn't look up the latest Temurin JDK: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// Downloads Eclipse Temurin into Moorbox's Application Support folder after the user agreed.
+    func installJDK(_ release: JDKRelease) {
+        let key = Self.jdkInstallKey
+        guard installTasks[key] == nil else { return }
+        jdkError = nil
+        installs[key] = InstallProgress(phase: .downloading(received: 0, total: release.size))
+        log(.info, "Installing Temurin \(release.version)…")
+        let root = JavaLocator.managedRoot(applicationSupport: Self.supportDirectory)
+        installTasks[key] = Task {
+            do {
+                let jdk = try await Adoptium.install(release, managedRoot: root) { phase in
+                    Task { @MainActor [weak self] in self?.installs[key]?.phase = phase }
+                }
+                java = jdk
+                installs[key] = nil
+                log(.info, "Installed Temurin \(jdk.version).")
+            } catch is CancellationError {
+                installs[key] = nil
+            } catch {
+                installs[key] = InstallProgress(phase: .finished, error: error.localizedDescription)
+                log(.error, "Installing the JDK failed: \(error.localizedDescription)")
+            }
+            installTasks[key] = nil
+        }
     }
 
     func delete(_ device: VirtualDevice) {
@@ -389,30 +468,40 @@ final class AppModel {
         return "Requires Android Emulator \(needed) or newer (installed: \(have)). Update the emulator in Setup."
     }
 
-    /// Installs into the current SDK, or creates one at `effectiveSDKLocation`.
-    /// The caller is responsible for showing the license and obtaining consent first.
-    func install(_ package: RemotePackage, acceptLicense: Bool, replacing: Bool = false) {
+    var hasCommandLineTools: Bool { sdk?.commandLineToolsRevision != nil }
+
+    /// Installs into the current SDK, or creates one at `effectiveSDKLocation`. The caller
+    /// must have shown the size, destination and license and obtained the user's consent:
+    /// Google's Android CLI accepts licenses without prompting.
+    ///
+    /// cmdline-tools are installed by Moorbox (verified download); everything else is
+    /// installed by Google's Android CLI.
+    func install(_ package: RemotePackage, replacing: Bool = false) {
         guard installTasks[package.path] == nil else { return }
         let sdk = self.sdk ?? AndroidSDK(root: effectiveSDKLocation)
-        if replacing, package.path == "emulator", !instances.isEmpty {
+        if package.path == "emulator", !instances.isEmpty {
             alertMessage = "Stop all running devices before updating the emulator."
             return
         }
-        let license = self.license(for: package)
-        do {
-            if acceptLicense, let license { try sdk.recordAcceptance(of: license) }
-        } catch {
-            alertMessage = "Could not record license acceptance: \(error.localizedDescription)"
+        let isBootstrap = package.path == CommandLineToolsInstaller.packagePath
+        let cli = AndroidCLI(sdk: sdk)
+        guard isBootstrap || cli.isInstalled else {
+            alertMessage = "Install Google's command-line tools first (Setup Assistant → Android SDK tools)."
             return
         }
         installs[package.path] = InstallProgress(phase: .downloading(received: 0, total: package.archive(for: host.architecture)?.size ?? 0))
         log(.info, "Installing \(package.displayName) into \(sdk.root.path)…")
-        let installer = PackageInstaller(sdk: sdk, host: host.architecture)
         let path = package.path
+        let arch = host.architecture
         installTasks[path] = Task {
             do {
-                try await installer.install(package, license: license, replacing: replacing) { phase in
+                let report: @Sendable (InstallPhase) -> Void = { phase in
                     Task { @MainActor [weak self] in self?.installs[path]?.phase = phase }
+                }
+                if isBootstrap {
+                    try await CommandLineToolsInstaller.install(package, into: sdk, host: arch, replacing: replacing, progress: report)
+                } else {
+                    try await cli.install(package, host: arch, progress: report)
                 }
                 installs[path] = nil
                 log(.info, "Installed \(package.displayName).")
@@ -436,8 +525,18 @@ final class AppModel {
             alertMessage = "Stop the devices using this image first."
             return
         }
-        perform { try FileManager.default.trashItem(at: sdk.root.appendingPathComponent(image.relativeDirectory), resultingItemURL: nil) }
-        log(.info, "Moved \(image.packagePath) to the Trash.")
+        let cli = AndroidCLI(sdk: sdk)
+        guard cli.isInstalled else { alertMessage = "Install Google's command-line tools first."; return }
+        Task {
+            do {
+                try await cli.remove(image.packagePath)
+                log(.info, "Removed \(image.packagePath).")
+            } catch {
+                alertMessage = error.localizedDescription
+                log(.error, "Removing \(image.packagePath) failed: \(error.localizedDescription)")
+            }
+            refresh()
+        }
     }
 
     func cancelInstall(_ path: String) { installTasks[path]?.cancel() }
@@ -446,6 +545,11 @@ final class AppModel {
     // MARK: Events
 
     func log(_ level: AppEvent.Level, _ message: String) {
+        switch level {
+        case .info: logger.info("\(message, privacy: .public)")
+        case .warning: logger.warning("\(message, privacy: .public)")
+        case .error: logger.error("\(message, privacy: .public)")
+        }
         events.append(AppEvent(level: level, message: message))
         if events.count > 500 { events.removeFirst(events.count - 500) }
     }

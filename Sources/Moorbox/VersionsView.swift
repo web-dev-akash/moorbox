@@ -156,7 +156,8 @@ struct InstallSheet: View {
         let destination = model.effectiveSDKLocation
         let alreadyAccepted = license.map { AndroidSDK(root: destination).hasAccepted($0) } ?? true
         let free = HostInfo.availableDiskSpace(at: destination)
-        let needed = archive.map(PackageInstaller.requiredSpace) ?? 0
+        let needed = ArchiveInstaller.requiredSpace(for: archive?.size ?? 0)
+        let isTools = package.path == CommandLineToolsInstaller.packagePath
         VStack(alignment: .leading, spacing: 12) {
             Text("Install \(package.displayName)").font(.title2.bold())
             Grid(alignment: .leading, verticalSpacing: 4) {
@@ -165,6 +166,15 @@ struct InstallSheet: View {
                 GridRow { Text("Available").foregroundStyle(.secondary); Text(free.map(\.bytes) ?? "unknown") }
                 GridRow { Text("Source").foregroundStyle(.secondary); Text(archive?.url.host ?? "—") }
                 GridRow { Text("Destination").foregroundStyle(.secondary); Text(destination.path).textSelection(.enabled) }
+                GridRow {
+                    Text("Installed by").foregroundStyle(.secondary)
+                    Text(isTools ? "Moorbox (download verified against Google’s SHA-1 checksum)" : "Google’s Android CLI, with usage metrics turned off")
+                }
+            }
+            if isTools {
+                Label("These are Google’s official SDK tools: the Android CLI (package installs) and avdmanager (device creation). On first use, Google’s launcher downloads the full Android CLI (about 90 MB) to ~/.android/bin.",
+                      systemImage: "info.circle")
+                    .font(.callout)
             }
             if replacing {
                 Label("The installed version will be replaced after the new one is downloaded and verified.", systemImage: "arrow.triangle.2.circlepath")
@@ -186,7 +196,7 @@ struct InstallSheet: View {
                 Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
                 Button(alreadyAccepted ? "Install" : "Accept License & Install") {
-                    model.install(package, acceptLicense: !alreadyAccepted, replacing: replacing)
+                    model.install(package, replacing: replacing)
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
@@ -194,6 +204,6 @@ struct InstallSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 620, height: license != nil && !alreadyAccepted ? 620 : 300)
+        .frame(width: 640, height: license != nil && !alreadyAccepted ? 660 : 360)
     }
 }

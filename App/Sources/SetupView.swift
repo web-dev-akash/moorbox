@@ -44,7 +44,8 @@ struct SetupView: View {
             }
             .padding()
         }
-        .frame(width: 660, height: 720)
+        // Fits small displays: the steps scroll and the footer stays visible.
+        .frame(width: 660, height: fittingSheetHeight(720))
         .onAppear { model.loadCatalog() }
         .sheet(isPresented: Binding(get: { confirm != nil }, set: {
             if !$0 {

@@ -207,6 +207,6 @@ struct LogSheet: View {
             }
         }
         .padding()
-        .frame(width: 760, height: 520)
+        .frame(width: 760, height: fittingSheetHeight(520))
     }
 }

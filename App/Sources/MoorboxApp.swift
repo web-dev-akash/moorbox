@@ -123,6 +123,14 @@ struct ContentView: View {
     }
 }
 
+/// Sheet heights that fit the current display (sheets with scrolling content shrink on
+/// small screens instead of putting their buttons off-screen).
+@MainActor
+func fittingSheetHeight(_ ideal: CGFloat, minimum: CGFloat = 360) -> CGFloat {
+    let available = (NSScreen.main?.visibleFrame.height ?? ideal + 120) - 120
+    return max(minimum, min(ideal, available))
+}
+
 extension Int64 {
     var bytes: String {
         ByteCountFormatter.string(fromByteCount: self, countStyle: .file)

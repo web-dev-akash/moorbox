@@ -227,6 +227,6 @@ struct InstallSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 640, height: license != nil && !alreadyAccepted ? 660 : 360)
+        .frame(width: 640, height: fittingSheetHeight(license != nil && !alreadyAccepted ? 660 : 360))
     }
 }

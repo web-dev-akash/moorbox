@@ -60,7 +60,7 @@ struct CreateDeviceView: View {
             }
             .padding()
         }
-        .frame(width: 540, height: 580)
+        .frame(width: 540, height: fittingSheetHeight(580))
         .onAppear {
             model.loadHardwareProfiles()
             imageID = imageID ?? model.installedImages.first?.id

@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    # macos-26 is the GA Apple Silicon image (Xcode 26.x default) as of 2026.
+    # Check https://github.com/actions/runner-images when bumping.
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: swift --version && xcodebuild -version
+      - name: Build (warnings are errors)
+        run: swift build -Xswiftc -warnings-as-errors
+      - name: Unit tests
+        # Integration tests are skipped unless MOORBOX_INTEGRATION=1.
+        run: swift test
+      - name: Package app bundle (ad-hoc signed)
+        run: scripts/package-app.sh
+      - name: Verify bundle
+        run: |
+          plutil -lint dist/Moorbox.app/Contents/Info.plist
+          codesign --verify --strict dist/Moorbox.app
+          file dist/Moorbox.app/Contents/MacOS/Moorbox
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Moorbox-${{ github.sha }}
+          path: dist/Moorbox-*.zip
+          retention-days: 14
+
+  checks:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shell scripts parse
+        run: for f in scripts/*.sh; do bash -n "$f"; done
+      - name: Required project files exist
+        run: |
+          for f in LICENSE NOTICE THIRD_PARTY_NOTICES.md README.md CONTRIBUTING.md CODE_OF_CONDUCT.md \
+                   SECURITY.md CHANGELOG.md VERSION docs/ROADMAP.md docs/PROJECT_STATUS.md \
+                   docs/PERFORMANCE.md docs/QA_CHECKLIST.md docs/architecture/ADR-001-runtime-strategy.md; do
+            test -s "$f" || { echo "::error::missing $f"; exit 1; }
+          done
+      - name: Relative Markdown links resolve
+        run: scripts/check-doc-links.sh
+      - name: No Android artifacts or keys committed
+        run: |
+          if git ls-files | grep -E '\.(apk|img|qcow2|keystore|jks|p12)$'; then
+            echo "::error::binary Android artifacts or keys must not be committed"; exit 1
+          fi

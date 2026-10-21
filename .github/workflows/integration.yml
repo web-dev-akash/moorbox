@@ -1,0 +1,29 @@
+name: Integration (real emulator)
+
+# GitHub-hosted Apple Silicon runners don't offer nested virtualization, so the
+# Android Emulator can't boot there. Run this manually on a self-hosted Apple
+# Silicon Mac with an Android SDK and at least one arm64 system image installed.
+on:
+  workflow_dispatch:
+    inputs:
+      fresh:
+        description: Also install a fresh SDK from scratch (~1.3 GB download)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build test APK
+        run: scripts/build-test-apk.sh
+      - name: Integration tests
+        env:
+          MOORBOX_INTEGRATION: '1'
+          MOORBOX_INTEGRATION_FRESH: ${{ inputs.fresh && '1' || '0' }}
+        run: swift test --filter IntegrationTests

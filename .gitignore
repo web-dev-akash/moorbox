@@ -1,0 +1,27 @@
+# Build output
+.build/
+.swiftpm/
+dist/
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# Never commit Android components, devices or keys
+*.apk
+*.img
+*.qcow2
+*.zip
+*.keystore
+*.jks
+sdk/
+avd/
+*.avd/
+
+# Local secrets and signing material
+.env
+*.p12
+*.cer
+*.mobileprovision
+
+# macOS
+.DS_Store

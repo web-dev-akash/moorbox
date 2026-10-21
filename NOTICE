@@ -1,0 +1,11 @@
+Moorbox
+Copyright 2026 The Moorbox Authors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Moorbox does not include or redistribute any Android SDK component, Android
+Emulator binary, or Android system image. Those are downloaded by the user,
+from Google, under Google's own license terms. See THIRD_PARTY_NOTICES.md.
+
+Android is a trademark of Google LLC. Moorbox is an independent project and is
+not affiliated with, sponsored by, or endorsed by Google.

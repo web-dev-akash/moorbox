@@ -7,11 +7,15 @@ public struct StartOptions: Sendable, Equatable {
     public var headless = false
     /// Don't save a quick-boot snapshot on shutdown (faster stop, slower next start).
     public var skipSnapshotSave = false
+    /// Show the device inside Moorbox's own window: the emulator's window stays hidden and
+    /// Moorbox drives the display and input over the emulator's local gRPC service.
+    public var embeddedDisplay = false
 
-    public init(coldBoot: Bool = false, headless: Bool = false, skipSnapshotSave: Bool = false) {
+    public init(coldBoot: Bool = false, headless: Bool = false, skipSnapshotSave: Bool = false, embeddedDisplay: Bool = false) {
         self.coldBoot = coldBoot
         self.headless = headless
         self.skipSnapshotSave = skipSnapshotSave
+        self.embeddedDisplay = embeddedDisplay
     }
 }
 
@@ -20,6 +24,19 @@ public struct RunningInstance: Hashable, Sendable {
     public var avdID: String
     public var avdDirectory: String
     public var consolePort: Int
+    /// gRPC control service (127.0.0.1 only). The token is present when the emulator was
+    /// started with `-grpc-use-token`, as Moorbox does.
+    public var grpcPort: Int?
+    public var grpcToken: String?
+
+    public init(pid: pid_t, avdID: String, avdDirectory: String, consolePort: Int, grpcPort: Int? = nil, grpcToken: String? = nil) {
+        self.pid = pid
+        self.avdID = avdID
+        self.avdDirectory = avdDirectory
+        self.consolePort = consolePort
+        self.grpcPort = grpcPort
+        self.grpcToken = grpcToken
+    }
 
     /// adb serial for an emulator: `emulator-<console port>`.
     public var serial: String {
@@ -96,6 +113,9 @@ public struct EmulatorRuntime: AndroidRuntime {
         }
         if options.headless {
             args += ["-no-window", "-no-audio"]
+        } else if options.embeddedDisplay {
+            // gRPC binds to 127.0.0.1; the token is in the user-only discovery file.
+            args += ["-qt-hide-window", "-grpc-use-token"]
         }
         return args
     }
@@ -165,7 +185,14 @@ public struct EmulatorRuntime: AndroidRuntime {
               let props = Properties.read(url),
               let avd = props["avd.id"] ?? props["avd.name"], // avd.name is the display name
               let port = props["port.serial"].flatMap({ Int($0) }) else { return nil }
-        return RunningInstance(pid: pid, avdID: avd, avdDirectory: props["avd.dir"] ?? "", consolePort: port)
+        return RunningInstance(
+            pid: pid,
+            avdID: avd,
+            avdDirectory: props["avd.dir"] ?? "",
+            consolePort: port,
+            grpcPort: props["grpc.port"].flatMap { Int($0) },
+            grpcToken: props["grpc.token"]
+        )
     }
 
     /// Matches on the AVD directory first so devices with the same name in another

@@ -8,4 +8,4 @@
 --stripunusedargs closure-only
 --header ignore
 --disable redundantReturn,wrapMultilineStatementBraces,blankLinesAroundMark
---exclude .build,dist,Moorbox.xcodeproj
+--exclude .build,dist,Moorbox.xcodeproj,Sources/EmulatorControl/Generated

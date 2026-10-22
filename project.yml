@@ -5,7 +5,7 @@ name: Moorbox
 options:
   bundleIdPrefix: io.github.web-dev-akash
   deploymentTarget:
-    macOS: "14.0"
+    macOS: "15.0"
   createIntermediateGroups: true
   developmentLanguage: en
   groupSortPosition: top
@@ -24,6 +24,9 @@ settings:
     CODE_SIGN_STYLE: Manual
     CODE_SIGN_IDENTITY: "-"
     DEVELOPMENT_TEAM: ""
+  configs:
+    Release:
+      CLANG_ENABLE_CODE_COVERAGE: NO
 
 packages:
   MoorboxCore:
@@ -38,6 +41,9 @@ targets:
       - App/Resources
     dependencies:
       - package: MoorboxCore
+        product: MoorboxCore
+      - package: MoorboxCore
+        product: EmulatorControl
     info:
       path: App/Info.plist
       properties:

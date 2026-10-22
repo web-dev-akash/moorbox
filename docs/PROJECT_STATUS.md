@@ -1,6 +1,6 @@
 # Project status
 
-_Last updated: 2026-10-21, end of the production-hardening session (0.2.0)._
+_Last updated: 2026-10-22. Moorbox 0.2.0 plus the Phase A player window (unreleased)._
 
 ## Summary
 
@@ -13,6 +13,36 @@ Moorbox 0.2.0 is a native SwiftUI app built on Google's official Android tooling
 When something is missing — command-line tools, emulator, platform-tools, a JDK,
 or an Android version — Moorbox explains what it is and installs it only after
 consent. It never works around missing pieces and never bypasses macOS security.
+
+## Since 0.2.0: the single-window player (Phase A of ADR-004)
+
+**Verified on a real device (API 34):**
+
+- **Start opens the player.** Starting a device opens Moorbox's player window,
+  and Android boots inside it.
+- **Display.** Frames arrive through shared memory: about 47 fps under
+  continuous input, 20–35 fps during normal transitions.
+- **Input.** Toolbar Home and Recents, and mouse drags, reach Android.
+- **Closing stops the device.** Closing the window stops the device gracefully.
+  Devices Moorbox didn't start are never stopped.
+- **Cost.** Moorbox uses about 12.5% of one core while streaming, and is
+  unchanged when idle (44 MB, 0 CPU).
+- **Size.** The release build is now an archive: stripped, 34 MB app and 15 MB
+  DMG, down from 135 MB unstripped.
+
+**Not yet verified:**
+
+- rotation (input mapping in landscape);
+- keyboard typing into a text field;
+- APK drag-and-drop onto the player;
+- several player windows at once.
+
+**Next phases are in ADR-004:**
+
+- **B:** emulator from source, bundled.
+- **C:** our own Android image. Build infrastructure is still to be decided.
+- **D:** zero-install first launch.
+- **E:** game keymapping and multi-instance.
 
 ## Verification environment
 

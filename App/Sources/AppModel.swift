@@ -41,6 +41,22 @@ final class AppModel {
         didSet { UserDefaults.standard.set(setupCompleted, forKey: "setupCompleted") }
     }
 
+    /// Show devices inside Moorbox's own player window (default) instead of the emulator's window.
+    var displayInMoorbox = UserDefaults.standard.object(forKey: "displayInMoorbox") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(displayInMoorbox, forKey: "displayInMoorbox") }
+    }
+
+    /// Player windows
+    var playerSessions: [String: PlayerSession] = [:]
+    /// Devices Moorbox itself started with an embedded display. Only these are stopped when
+    /// their player window closes or Moorbox quits: other tools (e.g. Android Studio) also run
+    /// hidden-window emulators with gRPC tokens, and those must never be stopped by Moorbox.
+    var embeddedLaunches: Set<String> = []
+    /// Set by the main window: opens (or focuses) a device's player window.
+    var openPlayerWindow: ((String) -> Void)?
+    /// Short status messages shown inside a player window (e.g. APK install results).
+    var playerMessages: [String: String] = [:]
+
     // Discovered state
     private(set) var sdk: AndroidSDK?
     private(set) var sdkHealth: SDKHealth?
@@ -164,6 +180,10 @@ final class AppModel {
                 waitForBoot(device, instance)
             }
         }
+        for (id, session) in playerSessions {
+            let device = devices.first { $0.id == id }
+            session.update(instance: device.flatMap { runtime.instance(for: $0, in: instances) }, device: device)
+        }
     }
 
     /// The emulator registers running instances in a directory; watching it gives
@@ -263,7 +283,11 @@ extension AppModel {
         guard let runtime else { alertMessage = "Set up the Android Emulator first."; return }
         failures[device.id] = nil
         do {
-            let pid = try runtime.start(device, options: StartOptions(coldBoot: coldBoot))
+            let pid = try runtime.start(device, options: StartOptions(coldBoot: coldBoot, embeddedDisplay: displayInMoorbox))
+            if displayInMoorbox {
+                embeddedLaunches.insert(device.id)
+                openPlayerWindow?(device.id)
+            }
             pending[device.id] = .starting
             spawned[device.id] = pid
             watchProcess(pid, deviceID: device.id)

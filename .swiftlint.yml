@@ -6,6 +6,7 @@ included:
   - UITests
 excluded:
   - .build
+  - Sources/EmulatorControl/Generated
   - Tests/MoorboxCoreTests/Fixtures
 line_length:
   warning: 160

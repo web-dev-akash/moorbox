@@ -4,12 +4,14 @@ import SwiftUI
 @main
 struct MoorboxApp: App {
     @State private var model = AppModel()
+    @NSApplicationDelegateAdaptor private var appDelegate: AppDelegate
 
     var body: some Scene {
         Window("Moorbox", id: "main") {
             ContentView()
                 .environment(model)
                 .frame(minWidth: 900, minHeight: 560)
+                .modifier(WindowOpenerRegistration(model: model, delegate: appDelegate))
         }
         .commands {
             CommandGroup(replacing: .newItem) {
@@ -22,9 +24,49 @@ struct MoorboxApp: App {
             DeviceCommands(model: model)
         }
 
+        // One window per running device (embedded display).
+        WindowGroup("Device", id: "player", for: String.self) { $deviceID in
+            if let deviceID {
+                PlayerView(deviceID: deviceID)
+                    .environment(model)
+            }
+        }
+        .defaultSize(width: 440, height: 900)
+        .windowResizability(.contentMinSize)
+
         Settings {
             SettingsView().environment(model)
         }
+    }
+}
+
+/// Gives the model SwiftUI's window opener so any start path can show the player window.
+private struct WindowOpenerRegistration: ViewModifier {
+    let model: AppModel
+    let delegate: AppDelegate
+    @Environment(\.openWindow) private var openWindow
+
+    func body(content: Content) -> some View {
+        content.onAppear {
+            model.openPlayerWindow = { openWindow(id: "player", value: $0) }
+            delegate.model = model
+        }
+    }
+}
+
+/// Devices shown in Moorbox's own window have no emulator window, so they are stopped
+/// gracefully (snapshot saved) when Moorbox quits instead of running on unseen.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    weak var model: AppModel?
+
+    func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
+        guard let model = MainActor.assumeIsolated({ model }),
+              MainActor.assumeIsolated({ model.hasEmbeddedLaunchesRunning }) else { return .terminateNow }
+        Task { @MainActor in
+            await model.stopEmbeddedDevicesForQuit()
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
 }
 

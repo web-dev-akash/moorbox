@@ -27,6 +27,7 @@ read this before opening a pull request.
 
 | Path | What lives there |
 |---|---|
+| `Sources/EmulatorControl/` | gRPC client for the emulator's control API: display frames in shared memory, input. `Generated/` comes from `Proto/` via `scripts/generate-grpc.sh`; don't edit it. |
 | `Sources/MoorboxCore/` | Swift package with all logic: repository catalog, verified installer, the Android CLI, `avdmanager` and Java wrappers, AVD store, emulator runtime, adb, diagnostics. No UI imports. |
 | `App/` | The SwiftUI app (`Sources/`, `Resources/Assets.xcassets`). Views read `AppModel`, and `AppModel` calls MoorboxCore. |
 | `Tests/MoorboxCoreTests/` | Unit tests, plus opt-in integration tests (`IntegrationTests.swift`) and recorded fixtures of real tool output |
@@ -64,6 +65,14 @@ create their own SDK and device folders and never touch yours:
 make test-integration                                   # needs a JDK 17+ and an Android SDK with an arm64 image
 MOORBOX_INTEGRATION_JDK=1 make test-integration         # + Temurin install (~200 MB)
 MOORBOX_INTEGRATION_FRESH=1 make test-integration       # + full SDK from scratch (~1.4 GB)
+```
+
+**Live player tests** need a real emulator running with an embedded display
+(`-qt-hide-window -grpc-use-token`):
+
+```sh
+MOORBOX_LIVE_GRPC=1 swift test --filter LiveDisplay
+TEST_RUNNER_MOORBOX_LIVE_AVD_HOME=<avd home> TEST_RUNNER_MOORBOX_LIVE_DEVICE=<id> make test-ui
 ```
 
 **When adding parsing for a Google tool**, record real output as a fixture in

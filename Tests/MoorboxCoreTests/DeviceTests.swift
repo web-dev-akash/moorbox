@@ -185,6 +185,8 @@ struct RuntimeTests {
         #expect(EmulatorRuntime.arguments(for: device, options: StartOptions()) == base)
         #expect(EmulatorRuntime.arguments(for: device, options: StartOptions(coldBoot: true, headless: true))
             == base + ["-no-snapshot-load", "-no-window", "-no-audio"])
+        #expect(EmulatorRuntime.arguments(for: device, options: StartOptions(embeddedDisplay: true))
+            == base + ["-qt-hide-window", "-grpc-use-token"])
     }
 
     @Test func environmentPointsAtSDKAndAVDHome() {
@@ -210,12 +212,15 @@ struct RuntimeTests {
         avd.name=Test Phone
         avd.dir=/a/Test_Phone.avd
         grpc.token=secret
+        grpc.port=8556
         """)
         try tmp.write("pid_abc.ini", "avd.name=x\nport.serial=1\n")
         try tmp.write("other.txt", "")
         let parsed = try #require(EmulatorRuntime.parseDiscoveryFile(tmp.url.appendingPathComponent("pid_\(getpid()).ini")))
         #expect(parsed.serial == "emulator-5556")
         #expect(parsed.avdID == "Test_Phone") // avd.id, not the display name in avd.name
+        #expect(parsed.grpcToken == "secret")
+        #expect(parsed.grpcPort == 8556)
         #expect(parsed.avdDirectory == "/a/Test_Phone.avd")
         #expect(EmulatorRuntime.parseDiscoveryFile(tmp.url.appendingPathComponent("pid_abc.ini")) == nil)
 

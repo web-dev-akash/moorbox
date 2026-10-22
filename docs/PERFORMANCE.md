@@ -135,6 +135,29 @@ numbers.
   `sys.boot_completed` once.
 
 
+## 2b. Player window (embedded display), 2026-10-22
+
+**Method:**
+
+- The emulator runs with `-qt-hide-window -grpc-use-token`.
+- Moorbox requests RGBA8888 frames into a file-backed shared-memory region (gRPC
+  `streamScreenshot` with `MMAP` transport).
+- It copies each frame into a `CGImage` on a `CALayer`.
+- Device: API 34, 1080×2400. Frames scaled to the view.
+
+| Measurement | Result |
+|---|---|
+| Frame stream, continuous drag input, 540×1200 (`LiveDisplayTests`) | **about 47 fps** |
+| Player window in normal use (fps shown in the title) | 20–35 fps during transitions. The emulator only sends frames when the screen changes, so a static screen costs about 0. |
+| Moorbox CPU while streaming (21 samples during the live UI test) | **12.5% of one core on average**, near 0% on a static screen. The 79% peak was app launch. |
+| Moorbox memory while streaming | about 176 MB RSS (frame buffers included) |
+| Moorbox idle, no player open (release build) | 44 MB footprint, 0.00 s CPU per idle minute (unchanged) |
+| App size (universal, stripped) | 34 MB app, 15 MB DMG. The gRPC/SwiftNIO/BoringSSL stack accounts for most of the growth from 0.2.0. |
+
+**Next optimization (measure first):** render frames through Metal or IOSurface
+instead of copying each one into a `CGImage`, and request frames at the window's
+exact pixel size.
+
 ## 3. Other measured timings (integration tests, headless)
 
 These come from `MOORBOX_INTEGRATION=1 swift test` on the same Mac, using

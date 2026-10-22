@@ -191,7 +191,11 @@ struct DeviceRow: View {
             case .stopped, .failed:
                 Button("Start") { model.start(device) }
                     .help("Start using quick boot when a snapshot is available")
-            case .running, .booting:
+            case let .running(serial), let .booting(serial):
+                if model.instances.contains(where: { serial == "emulator-\($0.consolePort)" && $0.grpcToken != nil }) {
+                    Button("Show") { model.openPlayerWindow?(device.id) }
+                        .help("Show this device’s window")
+                }
                 Button("Stop") { model.stop(device) }
             case .starting:
                 Button("Cancel") { model.cancelStart(device) }

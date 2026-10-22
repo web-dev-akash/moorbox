@@ -7,6 +7,29 @@ source of truth; release tags are `v<version>`.
 
 ## [Unreleased]
 
+### Added
+- **Player window.** Running devices appear in Moorbox's own window: the Android
+  screen streams over the emulator's local gRPC service using shared memory.
+  - Mouse becomes touch, the trackpad scrolls, and the keyboard types.
+  - A BlueStacks-style side toolbar: Back, Home, Recents, volume, rotate,
+    screenshot, install APK and stop.
+  - Drag an APK onto the screen to install it.
+  - The emulator's own window remains available in Settings → Display.
+- `EmulatorControl` library: a Swift client for the emulator's gRPC control API
+  (SwiftProtobuf and gRPC Swift 2).
+- Third-party license texts are bundled in the app (`ThirdPartyLicenses.txt`).
+
+### Changed
+- **Requires macOS 15 or later** (gRPC Swift 2 requires it).
+- Release builds go through `xcodebuild archive`: stripped, with a separate dSYM.
+  The app is 34 MB and the DMG 15 MB.
+
+### Fixed
+- Packaging could ship a stale app if `xcodebuild` failed. It now fails loudly.
+- Moorbox only ever stops devices it started itself. Hidden-window emulators run
+  by other tools, such as Android Studio, are never stopped when a player window
+  closes or Moorbox quits.
+
 ## [0.2.0] - 2026-10-21
 
 ### Changed

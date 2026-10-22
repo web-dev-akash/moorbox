@@ -22,9 +22,11 @@ class Moorbox < Formula
     system "xcodegen", "generate", "--quiet"
     xcodebuild "-project", "Moorbox.xcodeproj", "-scheme", "Moorbox", "-configuration", "Release",
                "-derivedDataPath", buildpath/"DerivedData", "-destination", "generic/platform=macOS",
+               "CLANG_ENABLE_CODE_COVERAGE=NO", "DEPLOYMENT_POSTPROCESSING=YES", "STRIP_INSTALLED_PRODUCT=YES",
                "CODE_SIGN_IDENTITY=-", "DEVELOPMENT_TEAM=", "build"
     app = buildpath/"DerivedData/Build/Products/Release/Moorbox.app"
     cp %w[LICENSE NOTICE THIRD_PARTY_NOTICES.md], app/"Contents/Resources"
+    system "scripts/collect-licenses.sh", app/"Contents/Resources/ThirdPartyLicenses.txt"
     system "codesign", "--force", "--options", "runtime", "--sign", "-", app
     prefix.install app
   end

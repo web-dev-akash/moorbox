@@ -78,11 +78,18 @@ background services. Lighter default presets help too.
 - Live state without polling.
 - Devices created by Android Studio show up too, and vice versa.
 
-**Device controls**
+**Player window**
 
-- Rotate, screenshot to Desktop, Home, Back and Recents, with keyboard shortcuts.
-- Location, battery, sensors and network are in the emulator window's extended
-  controls.
+- Running devices appear in Moorbox's own window. The Android screen streams
+  through shared memory at up to about 47 fps.
+- Mouse becomes touch, the trackpad scrolls, and the keyboard types (Esc = Back).
+- The side toolbar has Back, Home, Recents, volume, rotate, screenshot,
+  install APK and stop.
+- Drag an APK onto the screen to install it.
+- Closing the window stops the device. The snapshot is saved, so the next start
+  is a quick boot.
+- Settings → Display switches to the emulator's own window, which also has
+  extended controls for location, battery, sensors and network.
 
 **App Installer**
 
@@ -125,7 +132,7 @@ Details and test evidence: [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
 
 ## Requirements
 
-- **macOS 14 Sonoma or later.** Only macOS 27 has been verified so far.
+- **macOS 15 Sequoia or later.** Only macOS 27 has been verified so far.
 - **An Apple Silicon Mac** (recommended and verified). Intel is untested.
 - **Memory:** 8 GB minimum, 16 GB or more recommended. Android 17 (API 37)
   images need at least 4 GB of guest RAM.
@@ -256,7 +263,7 @@ make dmg          # dist/Moorbox-<version>.dmg
 
 ```sh
 make test-core          # 69 unit tests: no network, SDK or emulator
-make test-ui            # 8 XCUITest UI tests against a fake SDK
+make test-ui            # 8 XCUITest UI tests against a fake SDK (+2 opt-in live player tests)
 make lint               # SwiftFormat --lint + SwiftLint --strict
 make test-integration   # real network, Google tools and emulator (opt-in)
 ```
@@ -389,6 +396,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and
 ## License
 
 - Moorbox's code: [Apache-2.0](LICENSE).
+- Bundled open-source libraries (gRPC Swift, SwiftNIO, SwiftProtobuf and their
+  dependencies, all Apache-2.0) ship with their license texts inside the app.
 - Android components are Google's, under Google's terms, and Google Play
   images contain proprietary software.
 - Eclipse Temurin is GPLv2 with the Classpath Exception.

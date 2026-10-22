@@ -32,6 +32,19 @@ struct SettingsView: View {
                 )
                 .font(.caption).foregroundStyle(.secondary)
             }
+            Section("Display") {
+                Picker("Show devices in", selection: $model.displayInMoorbox) {
+                    Text("Moorbox window").tag(true)
+                    Text("Emulator window").tag(false)
+                }
+                .pickerStyle(.radioGroup)
+                Text("""
+                Moorbox window shows the device with a toolbar, mouse, trackpad and keyboard input, and APK \
+                drag-and-drop. Emulator window uses the emulator’s own window, including its extended controls \
+                (location, sensors, battery). Applies the next time a device starts.
+                """)
+                .font(.caption).foregroundStyle(.secondary)
+            }
             Section("Android Versions") {
                 Toggle("Show preview and beta Android versions", isOn: $model.showPreviews)
             }
